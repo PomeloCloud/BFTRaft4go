@@ -1,0 +1,69 @@
+// This file deinfes a fundamental protocal for BFT raft impelmentation
+// For details of this protocal please refer:
+// http://www.scs.stanford.edu/14au-cs244b/labs/projects/copeland_zhong.pdf
+
+syntax = "proto3";
+package bftraft.pb;
+
+service BFTRaft {
+    rpc ExecCommand (CommandRequest) returns (CommandResponse) {}
+    rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse) {}
+    rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse) {}
+}
+
+message CommandRequest {
+    int64 client_id = 1;
+    int64 request_id = 2;
+    bytes signature = 3;
+    bytes data = 4;
+}
+
+message CommandResponse {
+    int32 leader_id = 1;
+    int32 node_id = 2;
+    int64 request_id = 3;
+    bytes signature = 4;
+    bytes result = 5;
+}
+
+message LogEntry {
+    int64 term = 1;
+    bytes hash = 2;
+    CommandRequest command = 3;
+}
+
+message RequestVoteRequest {
+    int64 term = 1;
+    int64 log_index = 2;
+    int64 log_term  = 3;
+    int32 candidate_id = 4;
+    bytes signature = 5;
+}
+
+message RequestVoteResponse {
+    int64 term = 1;
+    int32 node_id = 2;
+    int32 candidate_id = 3;
+    bool granted = 4;
+    bytes signature = 5;
+}
+
+message AppendEntriesRequest {
+    int64 term = 1;
+    int64 leader_id = 2;
+    int64 prev_log_index = 3;
+    int64 prev_log_term = 4;
+    bytes signature = 5;
+    repeated RequestVoteResponse quorum_votes = 6;
+    repeated LogEntry entries = 7;
+}
+
+message AppendEntriesResponse {
+    int64 term = 1;
+    int64 index = 2;
+    int32 node_id = 3;
+    bool successed = 4;
+    bool convinced = 5;
+    bytes hash = 6;
+    bytes signature = 7;
+}
