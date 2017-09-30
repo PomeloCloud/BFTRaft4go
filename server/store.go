@@ -15,13 +15,13 @@ const (
 
 func U32Bytes(t uint32) []byte {
 	bs := make([]byte, 4)
-	binary.LittleEndian.PutUint32(bs, t)
+	binary.BigEndian.PutUint32(bs, t)
 	return bs
 }
 
 func U64Bytes(n uint64) []byte {
 	bs := make([]byte, 8)
-	binary.LittleEndian.PutUint64(bs, n)
+	binary.BigEndian.PutUint64(bs, n)
 	return bs
 }
 
@@ -60,3 +60,4 @@ func (s *BFTRaftServer) GroupPeers(group uint64) ([]pb.Peer, error) {
 	}
 	return peers, nil
 }
+
