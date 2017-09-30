@@ -6,7 +6,17 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto"
 )
 
-func (s *BFTRaftServer) GroupPeers(group uint64) ([]pb.Peer, error) {
+func (s *BFTRaftServer) GetGroupPeers(group uint64) []pb.Peer {
+	s.lock.RLock()
+	if peers, found := s.Peers[group]; found {
+		s.lock.RUnlock()
+		return peers
+	}
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	if peers, found := s.Peers[group]; found {
+		return peers
+	}
 	var peers []pb.Peer
 	keyPrefix := ComposeKeyPrefix(group, GROUP_PEERS)
 	iter := s.DB.NewIterator(badger.IteratorOptions{})
@@ -17,5 +27,6 @@ func (s *BFTRaftServer) GroupPeers(group uint64) ([]pb.Peer, error) {
 		proto.Unmarshal(data, &peer)
 		peers = append(peers, peer)
 	}
-	return peers, nil
+	s.Peers[group] = peers
+	return peers
 }

@@ -7,6 +7,7 @@ import (
 	"net"
 	"google.golang.org/grpc"
 	"github.com/dgraph-io/badger"
+	"sync"
 )
 
 type Options struct {
@@ -20,9 +21,14 @@ type BFTRaftServer struct {
 	DB *badger.KV
 	Nodes []*pb.Node
 	FuncReg map[uint64]map[uint64]func(arg []byte) []byte
+	Peers map[uint64][]pb.Peer
+	lock *sync.RWMutex
 }
 
-func (s *BFTRaftServer) ExecCommand(context.Context, *pb.CommandRequest) (*pb.CommandResponse, error)  {
+func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error)  {
+	group := cmd.Group
+	peers := s.GetGroupPeers(group)
+
 	return nil, nil
 }
 
@@ -32,6 +38,10 @@ func (s *BFTRaftServer) RequestVote(context.Context, *pb.RequestVoteRequest) (*p
 
 func (s *BFTRaftServer) AppendEntries(context.Context, *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error)  {
 	return nil, nil
+}
+
+func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg []byte)[]byte) {
+	s.FuncReg[group][func_id] = fn
 }
 
 func start(serverOpts Options) error {
