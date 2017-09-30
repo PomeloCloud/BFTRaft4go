@@ -7,7 +7,6 @@ import (
 	"net"
 	"google.golang.org/grpc"
 	"github.com/dgraph-io/badger"
-	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 type Options struct {
@@ -20,6 +19,7 @@ type BFTRaftServer struct {
 	Opts Options
 	DB *badger.KV
 	Nodes []*pb.Node
+	FuncReg map[uint64]map[uint64]func(arg []byte) []byte
 }
 
 func (s *BFTRaftServer) ExecCommand(context.Context, *pb.CommandRequest) (*pb.CommandResponse, error)  {

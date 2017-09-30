@@ -15,8 +15,9 @@ message CommandRequest {
     uint64 group = 1;
     uint64 client_id = 2;
     uint64 request_id = 3;
-    bytes signature = 4;
-    bytes data = 5;
+    uint64 func_id = 4;
+    bytes signature = 5;
+    bytes arg = 6;
 }
 
 message CommandResponse {
