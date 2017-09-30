@@ -22,3 +22,13 @@ func (liter *LogEntryIterator) Next() *pb.LogEntry  {
 		return nil
 	}
 }
+
+func (s *BFTRaftServer) ReversedLogIterator (group uint64) LogEntryIterator {
+	keyPrefix := ComposeKeyPrefix(group, RAFT_LOGS)
+	iter := s.DB.NewIterator(badger.IteratorOptions{Reverse: true})
+	iter.Seek(append(keyPrefix, U64Bytes(^uint64(0))...)) // search from max possible index
+	return LogEntryIterator{
+		prefix: keyPrefix,
+		data: iter,
+	}
+}

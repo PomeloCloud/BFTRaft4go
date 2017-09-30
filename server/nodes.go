@@ -22,3 +22,13 @@ func (liter *NodeIterator) Next() *pb.Node  {
 		return nil
 	}
 }
+
+func (s *BFTRaftServer) NodesIterator () NodeIterator {
+	keyPrefix := ComposeKeyPrefix(NODE_LIST_GROUP, NODES_LIST)
+	iter := s.DB.NewIterator(badger.IteratorOptions{})
+	iter.Seek(append(keyPrefix, U64Bytes(0)...))
+	return NodeIterator{
+		prefix: keyPrefix,
+		data: iter,
+	}
+}

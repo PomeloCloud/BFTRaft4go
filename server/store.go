@@ -42,37 +42,3 @@ func ItemValue(item *badger.KVItem) []byte {
 	})
 	return val
 }
-
-func (s *BFTRaftServer) GroupPeers(group uint64) ([]pb.Peer, error) {
-	var peers []pb.Peer
-	keyPrefix := ComposeKeyPrefix(group, GROUP_PEERS)
-	iter := s.DB.NewIterator(badger.IteratorOptions{})
-	iter.Seek(append(keyPrefix, U64Bytes(0)...)) // seek the head
-	for iter.ValidForPrefix(keyPrefix) {
-		peer := pb.Peer{}
-		data := ItemValue(iter.Item())
-		proto.Unmarshal(data, &peer)
-		peers = append(peers, peer)
-	}
-	return peers, nil
-}
-
-func (s *BFTRaftServer) ReversedLogIterator (group uint64) LogEntryIterator {
-	keyPrefix := ComposeKeyPrefix(group, RAFT_LOGS)
-	iter := s.DB.NewIterator(badger.IteratorOptions{Reverse: true})
-	iter.Seek(append(keyPrefix, U64Bytes(^0)...)) // search from max possible index
-	return LogEntryIterator{
-		prefix: keyPrefix,
-		data: iter,
-	}
-}
-
-func (s *BFTRaftServer) NodesIterator () NodeIterator {
-	keyPrefix := ComposeKeyPrefix(NODE_LIST_GROUP, NODES_LIST)
-	iter := s.DB.NewIterator(badger.IteratorOptions{})
-	iter.Seek(append(keyPrefix, U64Bytes(0)...))
-	return NodeIterator{
-		prefix: keyPrefix,
-		data: iter,
-	}
-}
