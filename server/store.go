@@ -10,8 +10,24 @@ import (
 const (
 	RAFT_LOGS = 0
 	GROUP_PEERS = 1
-	LAST_KEY = 2
 )
+
+type LogEntryIterator struct {
+	prefix []byte
+	data *badger.Iterator
+}
+
+func (liter *LogEntryIterator) Next() *pb.LogEntry  {
+	liter.data.Next()
+	if liter.data.ValidForPrefix(liter.prefix) {
+		entry := pb.LogEntry{}
+		itemData := ItemValue(liter.data.Item())
+		proto.Unmarshal(itemData, &entry)
+		return &entry
+	} else {
+		return nil
+	}
+}
 
 func U32Bytes(t uint32) []byte {
 	bs := make([]byte, 4)
@@ -39,14 +55,6 @@ func ItemValue(item *badger.KVItem) []byte {
 	return val
 }
 
-func (s *BFTRaftServer) LastRaftLogKey(group uint64) ([]byte, error)  {
-	var item badger.KVItem
-	if err := s.DB.Get(ComposeKeyPrefix(group, LAST_KEY), &item); err != nil {
-		return nil, err
-	}
-	return ItemValue(&item), nil
-}
-
 func (s *BFTRaftServer) GroupPeers(group uint64) ([]pb.Peer, error) {
 	var peers []pb.Peer
 	keyPrefix := ComposeKeyPrefix(group, GROUP_PEERS)
@@ -61,3 +69,12 @@ func (s *BFTRaftServer) GroupPeers(group uint64) ([]pb.Peer, error) {
 	return peers, nil
 }
 
+func (s *BFTRaftServer) ReversedLogIterator (group uint64) LogEntryIterator {
+	keyPrefix := ComposeKeyPrefix(group, RAFT_LOGS)
+	iter := s.DB.NewIterator(badger.IteratorOptions{Reverse: true})
+	iter.Seek(append(keyPrefix, U64Bytes(^0)...)) // search from max possible index
+	return LogEntryIterator{
+		prefix: keyPrefix,
+		data: iter,
+	}
+}
