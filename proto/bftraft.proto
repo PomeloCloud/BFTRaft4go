@@ -21,8 +21,8 @@ message CommandRequest {
 
 message CommandResponse {
     uint64 group = 1;
-    uint32 leader_id = 2;
-    uint32 node_id = 3;
+    uint64 leader_id = 2;
+    uint64 node_id = 3;
     uint64 request_id = 4;
     bytes signature = 5;
     bytes result = 6;
@@ -39,15 +39,15 @@ message RequestVoteRequest {
     uint64 term = 2;
     uint64 log_index = 3;
     uint64 log_term  = 4;
-    uint32 candidate_id = 5;
+    uint64 candidate_id = 5;
     bytes signature = 6;
 }
 
 message RequestVoteResponse {
     uint64 group = 1;
     uint64 term = 2;
-    uint32 node_id = 3;
-    uint32 candidate_id = 4;
+    uint64 node_id = 3;
+    uint64 candidate_id = 4;
     bool granted = 5;
     bytes signature = 6;
 }
@@ -67,7 +67,7 @@ message AppendEntriesResponse {
     uint64 group = 1;
     uint64 term = 2;
     uint64 index = 3;
-    uint32 node_id = 4;
+    uint64 node_id = 4;
     bool successed = 5;
     bool convinced = 6;
     bytes hash = 7;
@@ -76,4 +76,10 @@ message AppendEntriesResponse {
 
 message Peer {
     uint64 id = 1;
+    uint64 host = 2;
+}
+
+message Node {
+    uint64 id = 1;
+    string public_key = 2;
 }
