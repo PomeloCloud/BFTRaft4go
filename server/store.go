@@ -3,8 +3,6 @@ package server
 import (
 	"encoding/binary"
 	"github.com/dgraph-io/badger"
-	pb "github.com/PomeloCloud/BFTRaft4go/proto"
-	"github.com/golang/protobuf/proto"
 )
 
 const (
