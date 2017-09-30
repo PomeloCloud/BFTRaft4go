@@ -4,6 +4,9 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto"
+	jump "github.com/renstrom/go-jump-consistent-hash"
+	"hash/fnv"
+
 )
 
 type NodeIterator struct {
@@ -33,7 +36,7 @@ func (s *BFTRaftServer) NodesIterator () NodeIterator {
 	}
 }
 
-func (s *BFTRaftServer) OnlineNodes() []*pb.Node  {
+func (s *BFTRaftServer) LoadOnlineNodes()  {
 	iter := s.NodesIterator()
 	nodes := []*pb.Node{}
 	for true {
@@ -45,5 +48,13 @@ func (s *BFTRaftServer) OnlineNodes() []*pb.Node  {
 			break
 		}
 	}
-	return nodes
+	s.Nodes = nodes
+}
+
+func (s *BFTRaftServer) LocateNode(keyword []byte) *pb.Node {
+	h := fnv.New64a()
+	h.Write(keyword)
+	sum := h.Sum64()
+	nodeIndex := jump.Hash(sum, int32(len(s.Nodes)))
+	return s.Nodes[nodeIndex]
 }

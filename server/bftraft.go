@@ -11,6 +11,7 @@ import (
 
 type BFTRaftServer struct {
 	DB *badger.KV
+	Nodes []*pb.Node
 }
 
 func (s *BFTRaftServer) ExecCommand(context.Context, *pb.CommandRequest) (*pb.CommandResponse, error)  {
