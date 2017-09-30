@@ -10,24 +10,12 @@ import (
 const (
 	RAFT_LOGS = 0
 	GROUP_PEERS = 1
+	NODES_LIST = 3
 )
 
-type LogEntryIterator struct {
-	prefix []byte
-	data *badger.Iterator
-}
-
-func (liter *LogEntryIterator) Next() *pb.LogEntry  {
-	liter.data.Next()
-	if liter.data.ValidForPrefix(liter.prefix) {
-		entry := pb.LogEntry{}
-		itemData := ItemValue(liter.data.Item())
-		proto.Unmarshal(itemData, &entry)
-		return &entry
-	} else {
-		return nil
-	}
-}
+const (
+	NODE_LIST_GROUP = 1
+)
 
 func U32Bytes(t uint32) []byte {
 	bs := make([]byte, 4)
@@ -74,6 +62,16 @@ func (s *BFTRaftServer) ReversedLogIterator (group uint64) LogEntryIterator {
 	iter := s.DB.NewIterator(badger.IteratorOptions{Reverse: true})
 	iter.Seek(append(keyPrefix, U64Bytes(^0)...)) // search from max possible index
 	return LogEntryIterator{
+		prefix: keyPrefix,
+		data: iter,
+	}
+}
+
+func (s *BFTRaftServer) NodesIterator () NodeIterator {
+	keyPrefix := ComposeKeyPrefix(NODE_LIST_GROUP, NODES_LIST)
+	iter := s.DB.NewIterator(badger.IteratorOptions{})
+	iter.Seek(append(keyPrefix, U64Bytes(0)...))
+	return NodeIterator{
 		prefix: keyPrefix,
 		data: iter,
 	}

@@ -81,5 +81,14 @@ message Peer {
 
 message Node {
     uint64 id = 1;
-    string public_key = 2;
+    uint64 last_seen = 2;
+    bool online = 3;
+    string public_key = 4;
 }
+
+message RaftGroup {
+    uint32 replications = 1;
+    uint64 id = 2;
+    repeated uint64 peers = 3;
+}
+
