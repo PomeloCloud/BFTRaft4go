@@ -51,10 +51,10 @@ func (s *BFTRaftServer) LoadOnlineNodes()  {
 	s.Nodes = nodes
 }
 
-func (s *BFTRaftServer) LocateNode(keyword []byte) *pb.Node {
+func (s *BFTRaftServer) LocateNodeIndex(keyword []byte) int32 {
 	h := fnv.New64a()
 	h.Write(keyword)
 	sum := h.Sum64()
-	nodeIndex := jump.Hash(sum, int32(len(s.Nodes)))
-	return s.Nodes[nodeIndex]
+	return jump.Hash(sum, int32(len(s.Nodes)))
 }
+
