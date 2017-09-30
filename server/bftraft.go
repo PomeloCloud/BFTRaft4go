@@ -7,9 +7,17 @@ import (
 	"net"
 	"google.golang.org/grpc"
 	"github.com/dgraph-io/badger"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
+type Options struct {
+	max_replications uint32
+	dbPath string
+	address string
+}
+
 type BFTRaftServer struct {
+	Opts Options
 	DB *badger.KV
 	Nodes []*pb.Node
 }
@@ -26,21 +34,26 @@ func (s *BFTRaftServer) AppendEntries(context.Context, *pb.AppendEntriesRequest)
 	return nil, nil
 }
 
-func start(dbPath string, address string) error {
+func start(serverOpts Options) error {
 	flag.Parse()
-	lis, err := net.Listen("tcp", address)
+	lis, err := net.Listen("tcp", serverOpts.address)
 	if err != nil {
 		return err
 	}
 	dbopt := badger.DefaultOptions
-	dbopt.Dir = dbPath
-	dbopt.ValueDir = dbPath
+	dbopt.Dir = serverOpts.dbPath
+	dbopt.ValueDir = serverOpts.dbPath
 	db, err := badger.NewKV(&dbopt)
 	if err != nil {
 		return err
 	}
 	grpcServer := grpc.NewServer()
-	pb.RegisterBFTRaftServer(grpcServer, &BFTRaftServer{ db })
+	bftRaftServer := BFTRaftServer{
+		Opts: serverOpts,
+		DB: db,
+	}
+	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
+	bftRaftServer.LoadOnlineNodes()
 	grpcServer.Serve(lis)
 	return nil
 }
