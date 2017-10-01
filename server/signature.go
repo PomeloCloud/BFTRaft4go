@@ -4,7 +4,6 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/x509"
 	"errors"
 	"fmt"
@@ -31,4 +30,20 @@ func ParsePrivateKey(data []byte) (*rsa.PrivateKey, error) {
 func ParsePublicKey(data []byte) (*rsa.PublicKey, error) {
 	key, err := x509.ParsePKIXPublicKey(data)
 	return key.(*rsa.PublicKey), err
+}
+
+func (s *BFTRaftServer) Sign (data []byte) ([]byte, error) {
+	hash := crypto.SHA1
+	h := hash.New()
+	h.Write(data)
+	hashed := h.Sum(nil)
+	return rsa.SignPKCS1v15(rand.Reader, s.PrivateKey, hash, hashed)
+}
+
+func VerifySign (publicKey *rsa.PublicKey, signature []byte, data []byte) error {
+	hash := crypto.SHA1
+	h := hash.New()
+	h.Write(data)
+	hashed := h.Sum(nil)
+	return rsa.VerifyPKCS1v15(publicKey, hash, hashed, signature)
 }
