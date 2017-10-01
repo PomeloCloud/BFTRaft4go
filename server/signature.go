@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"hash/fnv"
 )
 
 func GenerateKey() ([]byte, []byte, error) {
@@ -30,12 +31,24 @@ func ParsePublicKey(data []byte) (*rsa.PublicKey, error) {
 	return key.(*rsa.PublicKey), err
 }
 
-func (s *BFTRaftServer) Sign (data []byte) ([]byte, error) {
+func PublicKeyFromPrivate(key *rsa.PrivateKey) *rsa.PublicKey {
+	return &key.PublicKey
+}
+
+func HashPublicKey(key *rsa.PublicKey) uint64 {
+	fnv_hasher := fnv.New64a()
+	keyData, _ := x509.MarshalPKIXPublicKey(key)
+	fnv_hasher.Write(keyData)
+	return fnv_hasher.Sum64()
+}
+
+func (s *BFTRaftServer) Sign (data []byte) []byte {
 	hash := crypto.SHA1
 	h := hash.New()
 	h.Write(data)
 	hashed := h.Sum(nil)
-	return rsa.SignPKCS1v15(rand.Reader, s.PrivateKey, hash, hashed)
+	signature, _ := rsa.SignPKCS1v15(rand.Reader, s.PrivateKey, hash, hashed)
+	return signature
 }
 
 func VerifySign (publicKey *rsa.PublicKey, signature []byte, data []byte) error {

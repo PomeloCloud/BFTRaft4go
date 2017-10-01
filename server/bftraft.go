@@ -21,6 +21,7 @@ type Options struct {
 }
 
 type BFTRaftServer struct {
+	Id uint64
 	Opts Options
 	DB *badger.KV
 	Nodes map[uint64]*pb.Node
@@ -37,12 +38,26 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	group := s.GetGroup(group_id)
 	leader_peer_id := group.LeaderPeer
 	leader_peer := s.GetPeer(group_id, leader_peer_id)
+	response := &pb.CommandResponse{
+		Group: cmd.Group,
+		LeaderId: 0,
+		NodeId: s.Id,
+		RequestId: cmd.RequestId,
+		Signature: s.Sign(U64Bytes(cmd.RequestId)),
+		Result: []byte{},
+	}
 	if leader_node, found_leader := s.Nodes[leader_peer.Host]; found_leader {
-		if client, err := s.clients.Get(leader_node.ServerAddr); err != nil {
-			return client.rpc.ExecCommand(ctx, cmd)
+		if leader_node.Id != s.Id {
+			if client, err := s.clients.Get(leader_node.ServerAddr); err != nil {
+				return client.rpc.ExecCommand(ctx, cmd)
+			} else {
+				return response, nil
+			}
+		} else {
+
 		}
 	} else {
-		// return &pb.CommandResponse{}
+		return response, nil
 	}
 	return nil, nil
 }
@@ -82,6 +97,7 @@ func start(serverOpts Options) error {
 		return err
 	}
 	bftRaftServer := BFTRaftServer{
+		Id: HashPublicKey(PublicKeyFromPrivate(privateKey)),
 		Opts: serverOpts,
 		DB: db,
 		clients: NewClientStore(),
