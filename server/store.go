@@ -43,11 +43,16 @@ func ComposeKeyPrefix (group uint64, t uint32) []byte {
 	return append(U64Bytes(group), U32Bytes(t)...)
 }
 
-func ItemValue(item *badger.KVItem) []byte {
-	var val []byte
+func ItemValue(item *badger.KVItem) *[]byte {
+	var val *[]byte
 	item.Value(func(bytes []byte) error {
-		val = make([]byte, len(bytes))
-		copy(val, bytes)
+		if bytes != nil {
+			lval := make([]byte, len(bytes))
+			copy(lval, bytes)
+			val = &lval
+		} else {
+			val = nil
+		}
 		return nil
 	})
 	return val

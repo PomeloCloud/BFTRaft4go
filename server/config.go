@@ -13,9 +13,13 @@ func GetConfig(kv *badger.KV) (*pb.ServerConfig, error) {
 		return nil, err
 	}
 	data := ItemValue(&item)
-	conf := pb.ServerConfig{}
-	if err := proto.Unmarshal(data, &conf); err != nil {
-		return nil, err
+	if data == nil {
+		return nil, nil
+	} else {
+		conf := pb.ServerConfig{}
+		if err := proto.Unmarshal(*data, &conf); err != nil {
+			return nil, err
+		}
+		return &conf, nil
 	}
-	return &conf, nil
 }

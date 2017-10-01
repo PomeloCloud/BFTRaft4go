@@ -37,8 +37,12 @@ func (s *BFTRaftServer) GetPeer(group uint64, peer_id uint64) *pb.Peer {
 	item := badger.KVItem{}
 	s.DB.Get(dbKey, &item)
 	data := ItemValue(&item)
-	peer := pb.Peer{}
-	proto.Unmarshal(data, &peer)
-	s.Peers.Set(cacheKey, &peer, cache.DefaultExpiration)
-	return &peer
+	if data == nil {
+		return nil
+	} else {
+		peer := pb.Peer{}
+		proto.Unmarshal(*data, &peer)
+		s.Peers.Set(cacheKey, &peer, cache.DefaultExpiration)
+		return &peer
+	}
 }

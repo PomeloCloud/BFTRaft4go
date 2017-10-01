@@ -18,8 +18,13 @@ func (s *BFTRaftServer) GetGroup(group_id uint64) *pb.RaftGroup {
 		keyPrefix := ComposeKeyPrefix(group_id, GROUP_META)
 		item := badger.KVItem{}
 		s.DB.Get(keyPrefix, &item)
-		proto.Unmarshal(ItemValue(&item), group)
-		s.Groups.Set(cacheKey, group, cache.DefaultExpiration)
-		return group
+		data := ItemValue(&item)
+		if data == nil {
+			return nil
+		} else {
+			proto.Unmarshal(*data, group)
+			s.Groups.Set(cacheKey, group, cache.DefaultExpiration)
+			return group
+		}
 	}
 }

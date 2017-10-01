@@ -24,11 +24,11 @@ type BFTRaftServer struct {
 	Id uint64
 	Opts Options
 	DB *badger.KV
-	Nodes map[uint64]*pb.Node
 	FuncReg map[uint64]map[uint64]func(arg []byte) []byte
 	Peers *cache.Cache
 	Groups *cache.Cache
 	GroupsPeers *cache.Cache
+	Nodes *cache.Cache
 	PrivateKey *rsa.PrivateKey
 	lock *sync.RWMutex
 	clients ClientStore
@@ -37,6 +37,9 @@ type BFTRaftServer struct {
 func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error)  {
 	group_id := cmd.Group
 	group := s.GetGroup(group_id)
+	if group == nil {
+		return nil, nil
+	}
 	leader_peer_id := group.LeaderPeer
 	leader_peer := s.GetPeer(group_id, leader_peer_id)
 	response := &pb.CommandResponse{
@@ -47,16 +50,33 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 		Signature: s.Sign(U64Bytes(cmd.RequestId)),
 		Result: []byte{},
 	}
-	if leader_node, found_leader := s.Nodes[leader_peer.Host]; found_leader {
+	if leader_peer == nil {
+		return response, nil
+	}
+	if leader_node := s.GetNode(leader_peer.Host); leader_node != nil {
 		if leader_node.Id != s.Id {
 			if client, err := s.clients.Get(leader_node.ServerAddr); err != nil {
 				return client.rpc.ExecCommand(ctx, cmd)
 			} else {
 				return response, nil
 			}
-		} else {
+		} else { // the node is the leader to this group
 			group_peers := s.GetGroupPeers(group_id)
-
+			host_peers := map[*pb.Peer]bool{}
+			for _, peer := range group_peers {
+				host_peers[peer] = true
+			}
+			for peer := range host_peers {
+				node := s.GetNode(peer.Host)
+				if node == nil {
+					continue
+				}
+				if _, err := s.clients.Get(node.ServerAddr); err != nil {
+					go func() {
+						// client.rpc.AppendEntries()
+					}()
+				}
+			}
 		}
 	} else {
 		return response, nil
@@ -106,10 +126,10 @@ func start(serverOpts Options) error {
 		Groups: cache.New(1 * time.Minute, 1 * time.Minute),
 		GroupsPeers: cache.New(1 * time.Minute, 1 * time.Minute),
 		Peers: cache.New(1 * time.Minute, 1 * time.Minute),
+		Nodes: cache.New(1 * time.Minute, 1 * time.Minute),
 		PrivateKey: privateKey,
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
-	bftRaftServer.LoadOnlineNodes()
 	grpcServer.Serve(lis)
 	return nil
 }

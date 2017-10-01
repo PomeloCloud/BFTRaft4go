@@ -16,7 +16,10 @@ func (liter *LogEntryIterator) Next() *pb.LogEntry  {
 	if liter.data.ValidForPrefix(liter.prefix) {
 		entry := pb.LogEntry{}
 		itemData := ItemValue(liter.data.Item())
-		proto.Unmarshal(itemData, &entry)
+		if itemData == nil {
+			return nil
+		}
+		proto.Unmarshal(*itemData, &entry)
 		return &entry
 	} else {
 		return nil
