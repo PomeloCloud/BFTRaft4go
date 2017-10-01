@@ -16,6 +16,7 @@ type Options struct {
 	max_replications uint32
 	dbPath string
 	address string
+	private_key []byte
 }
 
 type BFTRaftServer struct {
