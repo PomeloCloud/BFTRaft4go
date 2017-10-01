@@ -23,3 +23,12 @@ func GenerateKey() ([]byte, []byte, error) {
 	}
 	return privateKeyBytes, publicKeyBytes, nil
 }
+
+func ParsePrivateKey(data []byte) (*rsa.PrivateKey, error) {
+	return x509.ParsePKCS1PrivateKey(data)
+}
+
+func ParsePublicKey(data []byte) (*rsa.PublicKey, error) {
+	key, err := x509.ParsePKIXPublicKey(data)
+	return key.(*rsa.PublicKey), err
+}
