@@ -54,6 +54,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				return response, nil
 			}
 		} else {
+			group_peers := s.GetGroupPeers(group_id)
 
 		}
 	} else {

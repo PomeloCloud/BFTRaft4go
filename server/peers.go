@@ -8,16 +8,15 @@ import (
 	"github.com/patrickmn/go-cache"
 )
 
-func (s *BFTRaftServer) GetGroupPeers(group uint64) []pb.Peer {
-	var peers []pb.Peer
+func (s *BFTRaftServer) GetGroupPeers(group uint64) []*pb.Peer {
+	var peers []*pb.Peer
 	keyPrefix := ComposeKeyPrefix(group, GROUP_PEERS)
-	iter := s.DB.NewIterator(badger.IteratorOptions{})
+	iter := s.DB.NewIterator(badger.IteratorOptions{PrefetchValues: false})
 	iter.Seek(append(keyPrefix, U64Bytes(0)...)) // seek the head
 	for iter.ValidForPrefix(keyPrefix) {
-		peer := pb.Peer{}
-		data := ItemValue(iter.Item())
-		proto.Unmarshal(data, &peer)
-		peers = append(peers, peer)
+		item_key := iter.Item().Key()
+		peer_id := BytesU64(item_key, len(keyPrefix))
+		peers = append(peers, s.GetPeer(group, peer_id))
 	}
 	return peers
 }
