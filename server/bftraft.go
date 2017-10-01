@@ -23,14 +23,16 @@ type BFTRaftServer struct {
 	DB *badger.KV
 	Nodes []*pb.Node
 	FuncReg map[uint64]map[uint64]func(arg []byte) []byte
-	Peers map[uint64][]pb.Peer
+	Peers *cache.Cache
 	groups *cache.Cache
 	lock *sync.RWMutex
+	clients ClientStore
 }
 
 func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error)  {
-	group := cmd.Group
-	peers := s.GetGroupPeers(group)
+	group_id := cmd.Group
+	group := s.GetGroup(group_id)
+	leader_peer_id := group.LeaderPeer
 
 	return nil, nil
 }
@@ -65,6 +67,7 @@ func start(serverOpts Options) error {
 		Opts: serverOpts,
 		DB: db,
 		groups: cache.New(1 * time.Minute, 1 * time.Minute),
+		clients: NewClientStore(),
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
 	bftRaftServer.LoadOnlineNodes()

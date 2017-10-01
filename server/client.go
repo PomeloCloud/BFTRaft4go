@@ -37,7 +37,7 @@ func (cs *ClientStore)Get(serverAddr string) (*Client, error)  {
 	return &client, nil
 }
 
-func NewCacheStore() ClientStore {
+func NewClientStore() ClientStore {
 	store := ClientStore{
 		clients: cache.New(10 * time.Minute, 5 * time.Minute),
 	}
