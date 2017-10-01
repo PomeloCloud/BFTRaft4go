@@ -5,8 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"errors"
-	"fmt"
 )
 
 func GenerateKey() ([]byte, []byte, error) {
