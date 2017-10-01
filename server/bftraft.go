@@ -28,6 +28,7 @@ type BFTRaftServer struct {
 	FuncReg map[uint64]map[uint64]func(arg []byte) []byte
 	Peers *cache.Cache
 	Groups *cache.Cache
+	GroupsPeers *cache.Cache
 	PrivateKey *rsa.PrivateKey
 	lock *sync.RWMutex
 	clients ClientStore
@@ -103,6 +104,7 @@ func start(serverOpts Options) error {
 		DB: db,
 		clients: NewClientStore(),
 		Groups: cache.New(1 * time.Minute, 1 * time.Minute),
+		GroupsPeers: cache.New(1 * time.Minute, 1 * time.Minute),
 		Peers: cache.New(1 * time.Minute, 1 * time.Minute),
 		PrivateKey: privateKey,
 	}
