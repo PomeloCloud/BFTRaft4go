@@ -21,10 +21,10 @@ type Options struct {
 type BFTRaftServer struct {
 	Opts Options
 	DB *badger.KV
-	Nodes []*pb.Node
+	Nodes map[uint64]*pb.Node
 	FuncReg map[uint64]map[uint64]func(arg []byte) []byte
 	Peers *cache.Cache
-	groups *cache.Cache
+	Groups *cache.Cache
 	lock *sync.RWMutex
 	clients ClientStore
 }
@@ -33,7 +33,14 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	group_id := cmd.Group
 	group := s.GetGroup(group_id)
 	leader_peer_id := group.LeaderPeer
-
+	leader_peer := s.GetPeer(group_id, leader_peer_id)
+	if leader_node, found_leader := s.Nodes[leader_peer.Host]; found_leader {
+		if client, err := s.clients.Get(leader_node.ServerAddr); err != nil {
+			return client.rpc.ExecCommand(ctx, cmd)
+		}
+	} else {
+		// return &pb.CommandResponse{}
+	}
 	return nil, nil
 }
 
@@ -66,8 +73,9 @@ func start(serverOpts Options) error {
 	bftRaftServer := BFTRaftServer{
 		Opts: serverOpts,
 		DB: db,
-		groups: cache.New(1 * time.Minute, 1 * time.Minute),
 		clients: NewClientStore(),
+		Groups: cache.New(1 * time.Minute, 1 * time.Minute),
+		Peers: cache.New(1 * time.Minute, 1 * time.Minute),
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
 	bftRaftServer.LoadOnlineNodes()

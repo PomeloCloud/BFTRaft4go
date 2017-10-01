@@ -10,7 +10,7 @@ import (
 
 func (s *BFTRaftServer) GetGroup(group_id uint64) *pb.RaftGroup {
 	cacheKey := strconv.Itoa(int(group_id))
-	cachedGroup, cacheFound := s.groups.Get(cacheKey)
+	cachedGroup, cacheFound := s.Groups.Get(cacheKey)
 	if cacheFound {
 		return cachedGroup.(*pb.RaftGroup)
 	} else {
@@ -19,7 +19,7 @@ func (s *BFTRaftServer) GetGroup(group_id uint64) *pb.RaftGroup {
 		item := badger.KVItem{}
 		s.DB.Get(keyPrefix, &item)
 		proto.Unmarshal(ItemValue(&item), group)
-		s.groups.Set(cacheKey, group, cache.DefaultExpiration)
+		s.Groups.Set(cacheKey, group, cache.DefaultExpiration)
 		return group
 	}
 }

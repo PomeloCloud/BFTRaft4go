@@ -10,7 +10,7 @@ import (
 
 type Client struct {
 	conn *grpc.ClientConn
-	client pb.BFTRaftClient
+	rpc  pb.BFTRaftClient
 }
 
 type ClientStore struct {

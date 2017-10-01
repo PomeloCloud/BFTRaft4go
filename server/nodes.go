@@ -38,11 +38,11 @@ func (s *BFTRaftServer) NodesIterator () NodeIterator {
 
 func (s *BFTRaftServer) LoadOnlineNodes()  {
 	iter := s.NodesIterator()
-	nodes := []*pb.Node{}
+	nodes := map[uint64]*pb.Node{}
 	for true {
 		if node := iter.Next(); node != nil {
 			if node.Online {
-				nodes = append(nodes, node)
+				nodes[node.Id] = node
 			}
 		} else {
 			break

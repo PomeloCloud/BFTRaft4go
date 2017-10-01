@@ -86,6 +86,7 @@ message Node {
     uint32 weight = 3;
     bool online = 4;
     string public_key = 5;
+    string server_addr = 6;
 }
 
 message RaftGroup {
