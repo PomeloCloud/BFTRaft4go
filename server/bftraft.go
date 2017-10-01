@@ -10,13 +10,14 @@ import (
 	"github.com/patrickmn/go-cache"
 	"time"
 	"sync"
+	"crypto/rsa"
 )
 
 type Options struct {
 	max_replications uint32
 	dbPath string
 	address string
-	private_key []byte
+	privateKey []byte
 }
 
 type BFTRaftServer struct {
@@ -26,6 +27,7 @@ type BFTRaftServer struct {
 	FuncReg map[uint64]map[uint64]func(arg []byte) []byte
 	Peers *cache.Cache
 	Groups *cache.Cache
+	PrivateKey *rsa.PrivateKey
 	lock *sync.RWMutex
 	clients ClientStore
 }
@@ -71,12 +73,21 @@ func start(serverOpts Options) error {
 		return err
 	}
 	grpcServer := grpc.NewServer()
+	config, err := GetConfig(db)
+	if err != nil {
+		return err
+	}
+	privateKey, err := ParsePrivateKey(config.PublicKey)
+	if err != nil {
+		return err
+	}
 	bftRaftServer := BFTRaftServer{
 		Opts: serverOpts,
 		DB: db,
 		clients: NewClientStore(),
 		Groups: cache.New(1 * time.Minute, 1 * time.Minute),
 		Peers: cache.New(1 * time.Minute, 1 * time.Minute),
+		PrivateKey: privateKey,
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
 	bftRaftServer.LoadOnlineNodes()

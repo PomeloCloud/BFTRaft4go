@@ -96,3 +96,6 @@ message RaftGroup {
     // repeated uint64 peers = 4; Can be searched from the database buy scanning
 }
 
+message ServerConfig {
+    bytes public_key = 1;
+}

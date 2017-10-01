@@ -10,10 +10,12 @@ const (
 	GROUP_PEERS = 1
 	GROUP_META  = 2
 	NODES_LIST  = 3
+	SERVER_CONF = 100
 )
 
 const (
 	NODE_LIST_GROUP = 1
+	CONFIG_GROUP = 0
 )
 
 func U32Bytes(t uint32) []byte {
