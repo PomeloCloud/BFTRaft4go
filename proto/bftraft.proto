@@ -91,6 +91,7 @@ message Node {
 message RaftGroup {
     uint32 replications = 1;
     uint64 id = 2;
-    repeated uint64 peers = 3;
+    uint64 leader_peer = 3;
+    // repeated uint64 peers = 4; Can be searched from the database buy scanning
 }
 

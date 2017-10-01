@@ -7,6 +7,8 @@ import (
 	"net"
 	"google.golang.org/grpc"
 	"github.com/dgraph-io/badger"
+	"github.com/patrickmn/go-cache"
+	"time"
 	"sync"
 )
 
@@ -22,6 +24,7 @@ type BFTRaftServer struct {
 	Nodes []*pb.Node
 	FuncReg map[uint64]map[uint64]func(arg []byte) []byte
 	Peers map[uint64][]pb.Peer
+	groups *cache.Cache
 	lock *sync.RWMutex
 }
 
@@ -61,6 +64,7 @@ func start(serverOpts Options) error {
 	bftRaftServer := BFTRaftServer{
 		Opts: serverOpts,
 		DB: db,
+		groups: cache.New(1 * time.Minute, 1 * time.Minute),
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
 	bftRaftServer.LoadOnlineNodes()

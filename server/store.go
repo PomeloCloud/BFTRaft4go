@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	RAFT_LOGS = 0
+	RAFT_LOGS   = 0
 	GROUP_PEERS = 1
-	NODES_LIST = 3
+	GROUP_META  = 2
+	NODES_LIST  = 3
 )
 
 const (
