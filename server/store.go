@@ -6,11 +6,12 @@ import (
 )
 
 const (
-	RAFT_LOGS   = 0
-	GROUP_PEERS = 1
-	GROUP_META  = 2
-	NODES_LIST  = 3
-	SERVER_CONF = 100
+	LOG_ENTRIES   = 0
+	GROUP_PEERS   = 1
+	GROUP_META    = 2
+	NODES_LIST    = 3
+	GROUP_MAX_IDX = 4
+	SERVER_CONF   = 100
 )
 
 const (
@@ -40,7 +41,7 @@ func BytesU64(bs []byte, offset int) uint64 {
 }
 
 func ComposeKeyPrefix (group uint64, t uint32) []byte {
-	return append(U64Bytes(group), U32Bytes(t)...)
+	return append(U32Bytes(t), U64Bytes(group)...)
 }
 
 func ItemValue(item *badger.KVItem) *[]byte {

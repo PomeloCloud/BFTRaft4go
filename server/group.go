@@ -6,6 +6,7 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto"
 	"strconv"
 	"github.com/patrickmn/go-cache"
+	"encoding/binary"
 )
 
 func (s *BFTRaftServer) GetGroup(group_id uint64) *pb.RaftGroup {
@@ -27,4 +28,22 @@ func (s *BFTRaftServer) GetGroup(group_id uint64) *pb.RaftGroup {
 			return group
 		}
 	}
+}
+
+func (s *BFTRaftServer) IncrGetGroupLogMaxIndex(group_id uint64) uint64 {
+	key := ComposeKeyPrefix(group_id, GROUP_MAX_IDX)
+	for true {
+		item := badger.KVItem{}
+		s.DB.Get(key, &item)
+		data := ItemValue(&item)
+		var idx uint64 = 0
+		if data != nil {
+			idx = BytesU64(*data, 0)
+		}
+		idx += 1
+		if s.DB.CompareAndSet(key, U64Bytes(idx), item.Counter()) == nil {
+			return idx
+		}
+	}
+	panic("Incr Group IDX Failed")
 }

@@ -61,21 +61,15 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				return response, nil
 			}
 		} else { // the node is the leader to this group
-			group_peers := s.GetGroupPeers(group_id)
-			host_peers := map[*pb.Peer]bool{}
-			for _, peer := range group_peers {
-				host_peers[peer] = true
+			hash, _ := SHA1Hash(s.LastEntryHash(group_id))
+			logEntry := pb.LogEntry{
+				Term: group.Term,
+				Index: s.IncrGetGroupLogMaxIndex(group_id),
+				Hash: hash,
+				Command: cmd,
 			}
-			for peer := range host_peers {
-				node := s.GetNode(peer.Host)
-				if node == nil {
-					continue
-				}
-				if _, err := s.clients.Get(node.ServerAddr); err != nil {
-					go func() {
-						// client.rpc.AppendEntries()
-					}()
-				}
+			if s.AppendEntryToLocal(group, logEntry) == nil {
+				s.SendFollowersHeartbeat(group_id)
 			}
 		}
 	} else {
@@ -94,6 +88,30 @@ func (s *BFTRaftServer) AppendEntries(context.Context, *pb.AppendEntriesRequest)
 
 func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg []byte)[]byte) {
 	s.FuncReg[group][func_id] = fn
+}
+
+func (s *BFTRaftServer) SendFollowersHeartbeat(group_id uint64)  {
+	group_peers := s.GetGroupPeers(group_id)
+	host_peers := map[*pb.Peer]bool{}
+	for _, peer := range group_peers {
+		host_peers[peer] = true
+	}
+	for peer := range host_peers {
+		node := s.GetNode(peer.Host)
+		if node == nil {
+			continue
+		}
+		if client, err := s.clients.Get(node.ServerAddr); err != nil {
+			go func() {
+				client.rpc.AppendEntries(&pb.AppendEntriesRequest{
+					Group: ,
+					Term: group.Term,
+					LeaderId: s.Id,
+					PrevLogIndex:
+				})
+			}()
+		}
+	}
 }
 
 func start(serverOpts Options) error {

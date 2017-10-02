@@ -43,18 +43,19 @@ func HashPublicKey(key *rsa.PublicKey) uint64 {
 }
 
 func (s *BFTRaftServer) Sign (data []byte) []byte {
-	hash := crypto.SHA1
-	h := hash.New()
-	h.Write(data)
-	hashed := h.Sum(nil)
+	hashed, hash := SHA1Hash(data)
 	signature, _ := rsa.SignPKCS1v15(rand.Reader, s.PrivateKey, hash, hashed)
 	return signature
 }
 
 func VerifySign (publicKey *rsa.PublicKey, signature []byte, data []byte) error {
+	hashed, hash := SHA1Hash(data)
+	return rsa.VerifyPKCS1v15(publicKey, hash, hashed, signature)
+}
+
+func SHA1Hash(data []byte) ([]byte, crypto.Hash)  {
 	hash := crypto.SHA1
 	h := hash.New()
 	h.Write(data)
-	hashed := h.Sum(nil)
-	return rsa.VerifyPKCS1v15(publicKey, hash, hashed, signature)
+	return h.Sum(nil), hash
 }

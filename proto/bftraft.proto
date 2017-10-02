@@ -31,8 +31,9 @@ message CommandResponse {
 
 message LogEntry {
     uint64 term = 1;
-    bytes hash = 2;
-    CommandRequest command = 3;
+    uint64 index = 2;
+    bytes hash = 3;
+    CommandRequest command = 4;
 }
 
 message RequestVoteRequest {
@@ -78,21 +79,24 @@ message AppendEntriesResponse {
 message Peer {
     uint64 id = 1;
     uint64 host = 2;
+    uint64 next_index = 3;
+    uint64 match_index = 4;
 }
 
 message Node {
     uint64 id = 1;
     uint64 last_seen = 2;
-    uint32 weight = 3;
-    bool online = 4;
-    string public_key = 5;
-    string server_addr = 6;
+    bool online = 3;
+    string public_key = 4;
+    string server_addr = 5;
+    repeated uint64 peers = 6; 
 }
 
 message RaftGroup {
     uint32 replications = 1;
     uint64 id = 2;
     uint64 leader_peer = 3;
+    uint64 term = 4;
     // repeated uint64 peers = 4; Can be searched from the database buy scanning
 }
 
