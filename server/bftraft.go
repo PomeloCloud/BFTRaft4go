@@ -22,18 +22,19 @@ type Options struct {
 }
 
 type BFTRaftServer struct {
-	Id          uint64
-	Opts        Options
-	DB          *badger.KV
-	FuncReg     map[uint64]map[uint64]func(arg []byte) []byte
-	Peers       *cache.Cache
-	Groups      *cache.Cache
-	GroupsPeers *cache.Cache
-	Nodes       *cache.Cache
-	PrivateKey  *rsa.PrivateKey
-	Clients     ClientStore
-	GroupRes    *cache.Cache
-	lock        *sync.RWMutex
+	Id                uint64
+	Opts              Options
+	DB                *badger.KV
+	FuncReg           map[uint64]map[uint64]func(arg []byte) []byte
+	Peers             *cache.Cache
+	Groups            *cache.Cache
+	GroupsPeers       *cache.Cache
+	Nodes             *cache.Cache
+	GroupAppendedLogs *cache.Cache
+	GroupAppendLogRes *cache.Cache
+	PrivateKey        *rsa.PrivateKey
+	Clients           ClientStore
+	lock              *sync.RWMutex
 }
 
 func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error) {
@@ -59,8 +60,6 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 		if leader_node.Id != s.Id {
 			if client, err := s.Clients.Get(leader_node.ServerAddr); err != nil {
 				return client.rpc.ExecCommand(ctx, cmd)
-			} else {
-				return response, nil
 			}
 		} else { // the node is the leader to this group
 			hash, _ := SHA1Hash(s.LastEntryHash(group_id))
@@ -73,12 +72,11 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			}
 			if s.AppendEntryToLocal(group, logEntry) == nil {
 				s.SendFollowersHeartbeat(ctx, group)
+				response.Result = *s.WaitLogAppended(group_id, index)
 			}
 		}
-	} else {
-		return response, nil
 	}
-	return nil, nil
+	return response, nil
 }
 
 func (s *BFTRaftServer) RequestVote(context.Context, *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
@@ -127,16 +125,17 @@ func start(serverOpts Options) error {
 		return err
 	}
 	bftRaftServer := BFTRaftServer{
-		Id:          HashPublicKey(PublicKeyFromPrivate(privateKey)),
-		Opts:        serverOpts,
-		DB:          db,
-		Clients:     NewClientStore(),
-		Groups:      cache.New(1*time.Minute, 1*time.Minute),
-		GroupsPeers: cache.New(1*time.Minute, 1*time.Minute),
-		Peers:       cache.New(1*time.Minute, 1*time.Minute),
-		Nodes:       cache.New(1*time.Minute, 1*time.Minute),
-		GroupRes:    cache.New(2*time.Minute, 1*time.Minute),
-		PrivateKey:  privateKey,
+		Id:                HashPublicKey(PublicKeyFromPrivate(privateKey)),
+		Opts:              serverOpts,
+		DB:                db,
+		Clients:           NewClientStore(),
+		Groups:            cache.New(1*time.Minute, 1*time.Minute),
+		GroupsPeers:       cache.New(1*time.Minute, 1*time.Minute),
+		Peers:             cache.New(1*time.Minute, 1*time.Minute),
+		Nodes:             cache.New(1*time.Minute, 1*time.Minute),
+		GroupAppendLogRes: cache.New(2*time.Minute, 1*time.Minute),
+		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
+		PrivateKey:        privateKey,
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
 	grpcServer.Serve(lis)
