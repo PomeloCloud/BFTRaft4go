@@ -1,6 +1,8 @@
 package server
 
-import "time"
+import (
+	"time"
+)
 
 func TimeoutChan(t time.Duration) chan bool {
 	c := make(chan bool, 1)

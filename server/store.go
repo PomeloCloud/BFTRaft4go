@@ -16,7 +16,7 @@ const (
 
 const (
 	NODE_LIST_GROUP = 1
-	CONFIG_GROUP = 0
+	CONFIG_GROUP    = 0
 )
 
 const (
@@ -37,10 +37,10 @@ func U64Bytes(n uint64) []byte {
 }
 
 func BytesU64(bs []byte, offset int) uint64 {
-	return binary.BigEndian.Uint64(bs[offset:offset + UINT64_LEN])
+	return binary.BigEndian.Uint64(bs[offset : offset+UINT64_LEN])
 }
 
-func ComposeKeyPrefix (group uint64, t uint32) []byte {
+func ComposeKeyPrefix(group uint64, t uint32) []byte {
 	return append(U32Bytes(t), U64Bytes(group)...)
 }
 

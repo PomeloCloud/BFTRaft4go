@@ -1,11 +1,10 @@
 package server
 
 import (
-	"github.com/dgraph-io/badger"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto"
+	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 )
-
 
 func GetConfig(kv *badger.KV) (*pb.ServerConfig, error) {
 	item := badger.KVItem{}

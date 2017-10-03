@@ -1,11 +1,11 @@
 package server
 
 import (
-	"github.com/patrickmn/go-cache"
-	"time"
-	"google.golang.org/grpc"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto"
+	"github.com/patrickmn/go-cache"
+	"google.golang.org/grpc"
 	"sync"
+	"time"
 )
 
 type Client struct {
@@ -15,10 +15,10 @@ type Client struct {
 
 type ClientStore struct {
 	clients *cache.Cache
-	lock sync.Mutex
+	lock    sync.Mutex
 }
 
-func (cs *ClientStore)Get(serverAddr string) (*Client, error)  {
+func (cs *ClientStore) Get(serverAddr string) (*Client, error) {
 	if cachedClient, cachedFound := cs.clients.Get(serverAddr); cachedFound {
 		return cachedClient.(*Client), nil
 	}
@@ -39,7 +39,7 @@ func (cs *ClientStore)Get(serverAddr string) (*Client, error)  {
 
 func NewClientStore() ClientStore {
 	store := ClientStore{
-		clients: cache.New(10 * time.Minute, 5 * time.Minute),
+		clients: cache.New(10*time.Minute, 5*time.Minute),
 	}
 	store.clients.OnEvicted(func(host string, clientI interface{}) {
 		client := clientI.(*Client)

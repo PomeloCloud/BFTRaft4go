@@ -1,41 +1,42 @@
 package server
 
 import (
-	context "golang.org/x/net/context"
-	pb "github.com/PomeloCloud/BFTRaft4go/proto"
+	"crypto/rsa"
 	"flag"
-	"net"
-	"google.golang.org/grpc"
+	pb "github.com/PomeloCloud/BFTRaft4go/proto"
 	"github.com/dgraph-io/badger"
 	"github.com/patrickmn/go-cache"
-	"time"
+	context "golang.org/x/net/context"
+	"google.golang.org/grpc"
+	"net"
 	"sync"
-	"crypto/rsa"
+	"time"
 )
 
 type Options struct {
-	MaxReplications uint32
-	DBPath          string
-	Address         string
-	PrivateKey      []byte
+	MaxReplications  uint32
+	DBPath           string
+	Address          string
+	PrivateKey       []byte
 	ConsensusTimeout time.Duration
 }
 
 type BFTRaftServer struct {
-	Id uint64
-	Opts Options
-	DB *badger.KV
-	FuncReg map[uint64]map[uint64]func(arg []byte) []byte
-	Peers *cache.Cache
-	Groups *cache.Cache
+	Id          uint64
+	Opts        Options
+	DB          *badger.KV
+	FuncReg     map[uint64]map[uint64]func(arg []byte) []byte
+	Peers       *cache.Cache
+	Groups      *cache.Cache
 	GroupsPeers *cache.Cache
-	Nodes *cache.Cache
-	PrivateKey *rsa.PrivateKey
-	lock *sync.RWMutex
-	clients ClientStore
+	Nodes       *cache.Cache
+	PrivateKey  *rsa.PrivateKey
+	Clients     ClientStore
+	GroupRes    *cache.Cache
+	lock        *sync.RWMutex
 }
 
-func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error)  {
+func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error) {
 	group_id := cmd.Group
 	group := s.GetGroup(group_id)
 	if group == nil {
@@ -44,19 +45,19 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	leader_peer_id := group.LeaderPeer
 	leader_peer := s.GetPeer(group_id, leader_peer_id)
 	response := &pb.CommandResponse{
-		Group: cmd.Group,
-		LeaderId: 0,
-		NodeId: s.Id,
+		Group:     cmd.Group,
+		LeaderId:  0,
+		NodeId:    s.Id,
 		RequestId: cmd.RequestId,
 		Signature: s.Sign(U64Bytes(cmd.RequestId)),
-		Result: []byte{},
+		Result:    []byte{},
 	}
 	if leader_peer == nil {
 		return response, nil
 	}
 	if leader_node := s.GetNode(leader_peer.Host); leader_node != nil {
 		if leader_node.Id != s.Id {
-			if client, err := s.clients.Get(leader_node.ServerAddr); err != nil {
+			if client, err := s.Clients.Get(leader_node.ServerAddr); err != nil {
 				return client.rpc.ExecCommand(ctx, cmd)
 			} else {
 				return response, nil
@@ -65,9 +66,9 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			hash, _ := SHA1Hash(s.LastEntryHash(group_id))
 			index := s.IncrGetGroupLogMaxIndex(group_id)
 			logEntry := pb.LogEntry{
-				Term: group.Term,
-				Index: index,
-				Hash: hash,
+				Term:    group.Term,
+				Index:   index,
+				Hash:    hash,
 				Command: cmd,
 			}
 			if s.AppendEntryToLocal(group, logEntry) == nil {
@@ -80,19 +81,19 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	return nil, nil
 }
 
-func (s *BFTRaftServer) RequestVote(context.Context, *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error)  {
+func (s *BFTRaftServer) RequestVote(context.Context, *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
 	return nil, nil
 }
 
-func (s *BFTRaftServer) AppendEntries(context.Context, *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error)  {
+func (s *BFTRaftServer) AppendEntries(context.Context, *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	return nil, nil
 }
 
-func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg []byte)[]byte) {
+func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg []byte) []byte) {
 	s.FuncReg[group][func_id] = fn
 }
 
-func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, group *pb.RaftGroup)  {
+func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, group *pb.RaftGroup) {
 	group_peers := s.GetGroupPeers(group.Id)
 	host_peers := map[*pb.Peer]bool{}
 	for _, peer := range group_peers {
@@ -126,15 +127,16 @@ func start(serverOpts Options) error {
 		return err
 	}
 	bftRaftServer := BFTRaftServer{
-		Id: HashPublicKey(PublicKeyFromPrivate(privateKey)),
-		Opts: serverOpts,
-		DB: db,
-		clients: NewClientStore(),
-		Groups: cache.New(1 * time.Minute, 1 * time.Minute),
-		GroupsPeers: cache.New(1 * time.Minute, 1 * time.Minute),
-		Peers: cache.New(1 * time.Minute, 1 * time.Minute),
-		Nodes: cache.New(1 * time.Minute, 1 * time.Minute),
-		PrivateKey: privateKey,
+		Id:          HashPublicKey(PublicKeyFromPrivate(privateKey)),
+		Opts:        serverOpts,
+		DB:          db,
+		Clients:     NewClientStore(),
+		Groups:      cache.New(1*time.Minute, 1*time.Minute),
+		GroupsPeers: cache.New(1*time.Minute, 1*time.Minute),
+		Peers:       cache.New(1*time.Minute, 1*time.Minute),
+		Nodes:       cache.New(1*time.Minute, 1*time.Minute),
+		GroupRes:    cache.New(2*time.Minute, 1*time.Minute),
+		PrivateKey:  privateKey,
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
 	grpcServer.Serve(lis)

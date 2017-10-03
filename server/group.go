@@ -1,12 +1,12 @@
 package server
 
 import (
+	"encoding/binary"
+	pb "github.com/PomeloCloud/BFTRaft4go/proto"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
-	pb "github.com/PomeloCloud/BFTRaft4go/proto"
-	"strconv"
 	"github.com/patrickmn/go-cache"
-	"encoding/binary"
+	"strconv"
 )
 
 func (s *BFTRaftServer) GetGroup(group_id uint64) *pb.RaftGroup {

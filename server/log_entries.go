@@ -1,19 +1,19 @@
 package server
 
 import (
+	"bytes"
+	"fmt"
+	pb "github.com/PomeloCloud/BFTRaft4go/proto"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
-	pb "github.com/PomeloCloud/BFTRaft4go/proto"
-	"fmt"
-	"bytes"
 )
 
 type LogEntryIterator struct {
 	prefix []byte
-	data *badger.Iterator
+	data   *badger.Iterator
 }
 
-func (liter *LogEntryIterator) Next() *pb.LogEntry  {
+func (liter *LogEntryIterator) Next() *pb.LogEntry {
 	liter.data.Next()
 	if liter.data.ValidForPrefix(liter.prefix) {
 		entry := pb.LogEntry{}
@@ -28,17 +28,17 @@ func (liter *LogEntryIterator) Next() *pb.LogEntry  {
 	}
 }
 
-func (liter *LogEntryIterator)Close()  {
+func (liter *LogEntryIterator) Close() {
 	liter.data.Close()
 }
 
-func (s *BFTRaftServer) ReversedLogIterator (group uint64) LogEntryIterator {
+func (s *BFTRaftServer) ReversedLogIterator(group uint64) LogEntryIterator {
 	keyPrefix := ComposeKeyPrefix(group, LOG_ENTRIES)
 	iter := s.DB.NewIterator(badger.IteratorOptions{Reverse: true})
 	iter.Seek(append(keyPrefix, U64Bytes(^uint64(0))...)) // search from max possible index
 	return LogEntryIterator{
 		prefix: keyPrefix,
-		data: iter,
+		data:   iter,
 	}
 }
 
@@ -58,7 +58,7 @@ func (s *BFTRaftServer) LastEntryHash(group_id uint64) []byte {
 	return hash
 }
 
-func (s *BFTRaftServer) AppendEntryToLocal (group *pb.RaftGroup, entry pb.LogEntry) error {
+func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry pb.LogEntry) error {
 	group_id := entry.Command.Group
 	key := append(ComposeKeyPrefix(group_id, LOG_ENTRIES), U64Bytes(entry.Index)...)
 	existed, err := s.DB.Exists(key)

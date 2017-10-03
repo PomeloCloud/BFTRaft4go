@@ -1,14 +1,14 @@
 package server
 
 import (
+	"context"
+	"encoding/binary"
+	"fmt"
+	pb "github.com/PomeloCloud/BFTRaft4go/proto"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
-	pb "github.com/PomeloCloud/BFTRaft4go/proto"
-	"fmt"
 	"github.com/patrickmn/go-cache"
 	"strconv"
-	"encoding/binary"
-	"context"
 )
 
 func (s *BFTRaftServer) GetGroupPeers(group uint64) []*pb.Peer {
@@ -54,7 +54,7 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 	nextLogIdx := peer.NextIndex
 	result := []*pb.LogEntry{}
 	prevEntry := &pb.LogEntry{
-		Term: 0,
+		Term:  0,
 		Index: 0,
 	}
 	for true {
@@ -75,24 +75,24 @@ func AppendLogEntrySignData(groupId uint64, term uint64, prevIndex uint64, prevT
 	return []byte(fmt.Sprint(groupId, "-", term, "-", prevIndex, "-", prevTerm))
 }
 
-func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group *pb.RaftGroup, peer *pb.Peer)  {
+func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group *pb.RaftGroup, peer *pb.Peer) {
 	node := s.GetNode(peer.Host)
 	if node == nil {
 		return
 	}
-	if client, err := s.clients.Get(node.ServerAddr); err != nil {
+	if client, err := s.Clients.Get(node.ServerAddr); err != nil {
 		go func() {
 			entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
 			signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)
 			client.rpc.AppendEntries(ctx, &pb.AppendEntriesRequest{
-				Group: group.Id,
-				Term: group.Term,
-				LeaderId: s.Id,
+				Group:        group.Id,
+				Term:         group.Term,
+				LeaderId:     s.Id,
 				PrevLogIndex: prevEntry.Index,
-				PrevLogTerm: prevEntry.Term,
-				Signature: s.Sign(signData),
-				QuorumVotes: []*pb.RequestVoteResponse{},
-				Entries: entries,
+				PrevLogTerm:  prevEntry.Term,
+				Signature:    s.Sign(signData),
+				QuorumVotes:  []*pb.RequestVoteResponse{},
+				Entries:      entries,
 			})
 		}()
 	}
