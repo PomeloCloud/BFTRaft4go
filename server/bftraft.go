@@ -62,9 +62,10 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			}
 		} else { // the node is the leader to this group
 			hash, _ := SHA1Hash(s.LastEntryHash(group_id))
+			index := s.IncrGetGroupLogMaxIndex(group_id)
 			logEntry := pb.LogEntry{
 				Term: group.Term,
-				Index: s.IncrGetGroupLogMaxIndex(group_id),
+				Index: index,
 				Hash: hash,
 				Command: cmd,
 			}
@@ -97,20 +98,7 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(group_id uint64)  {
 		host_peers[peer] = true
 	}
 	for peer := range host_peers {
-		node := s.GetNode(peer.Host)
-		if node == nil {
-			continue
-		}
-		if client, err := s.clients.Get(node.ServerAddr); err != nil {
-			go func() {
-				client.rpc.AppendEntries(&pb.AppendEntriesRequest{
-					Group: ,
-					Term: group.Term,
-					LeaderId: s.Id,
-					PrevLogIndex:
-				})
-			}()
-		}
+		s.SendPeerUncommittedLogEntries(peer)
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"github.com/patrickmn/go-cache"
 	"strconv"
+	"encoding/binary"
+	"context"
 )
 
 func (s *BFTRaftServer) GetGroupPeers(group uint64) []*pb.Peer {
@@ -44,5 +46,49 @@ func (s *BFTRaftServer) GetPeer(group uint64, peer_id uint64) *pb.Peer {
 		proto.Unmarshal(*data, &peer)
 		s.Peers.Set(cacheKey, &peer, cache.DefaultExpiration)
 		return &peer
+	}
+}
+
+func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.Peer) ([]*pb.LogEntry, *pb.LogEntry) {
+	iter := s.ReversedLogIterator(group.Id)
+	nextLogIdx := peer.NextIndex
+	result := []*pb.LogEntry{}
+	prevEntry := &pb.LogEntry{
+		Term: 0,
+		Index: 0,
+	}
+	for true {
+		entry := iter.Next()
+		if entry == nil {
+			break
+		}
+		prevEntry = entry
+		if entry.Index < nextLogIdx {
+			break
+		}
+		result = append(result, entry)
+	}
+	return result, prevEntry
+}
+
+func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group *pb.RaftGroup, peer *pb.Peer)  {
+	node := s.GetNode(peer.Host)
+	if node == nil {
+		return
+	}
+	if client, err := s.clients.Get(node.ServerAddr); err != nil {
+		go func() {
+			entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
+			client.rpc.AppendEntries(ctx, &pb.AppendEntriesRequest{
+				Group: group.Id,
+				Term: group.Term,
+				LeaderId: s.Id,
+				PrevLogIndex: prevEntry.Index,
+				PrevLogTerm: prevEntry.Term,
+				Signature: s.Sign(U64Bytes(group.Id)),
+				QuorumVotes: []*pb.RequestVoteResponse{},
+				Entries: entries,
+			})
+		}()
 	}
 }

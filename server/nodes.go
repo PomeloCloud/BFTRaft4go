@@ -51,4 +51,3 @@ func (s *BFTRaftServer) GetNode (nodeId uint64) *pb.Node {
 	s.Nodes.Set(cacheKey, &node, cache.DefaultExpiration)
 	return &node
 }
-
