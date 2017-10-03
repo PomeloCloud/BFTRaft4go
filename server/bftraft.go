@@ -14,10 +14,11 @@ import (
 )
 
 type Options struct {
-	max_replications uint32
-	dbPath string
-	address string
-	privateKey []byte
+	MaxReplications uint32
+	DBPath          string
+	Address         string
+	PrivateKey      []byte
+	ConsensusTimeout time.Duration
 }
 
 type BFTRaftServer struct {
@@ -104,13 +105,13 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, group *pb.Ra
 
 func start(serverOpts Options) error {
 	flag.Parse()
-	lis, err := net.Listen("tcp", serverOpts.address)
+	lis, err := net.Listen("tcp", serverOpts.Address)
 	if err != nil {
 		return err
 	}
 	dbopt := badger.DefaultOptions
-	dbopt.Dir = serverOpts.dbPath
-	dbopt.ValueDir = serverOpts.dbPath
+	dbopt.Dir = serverOpts.DBPath
+	dbopt.ValueDir = serverOpts.DBPath
 	db, err := badger.NewKV(&dbopt)
 	if err != nil {
 		return err
