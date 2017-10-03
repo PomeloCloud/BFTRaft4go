@@ -70,7 +70,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				Command: cmd,
 			}
 			if s.AppendEntryToLocal(group, logEntry) == nil {
-				s.SendFollowersHeartbeat(group_id)
+				s.SendFollowersHeartbeat(ctx, group)
 			}
 		}
 	} else {
@@ -91,14 +91,14 @@ func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func
 	s.FuncReg[group][func_id] = fn
 }
 
-func (s *BFTRaftServer) SendFollowersHeartbeat(group_id uint64)  {
-	group_peers := s.GetGroupPeers(group_id)
+func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, group *pb.RaftGroup)  {
+	group_peers := s.GetGroupPeers(group.Id)
 	host_peers := map[*pb.Peer]bool{}
 	for _, peer := range group_peers {
 		host_peers[peer] = true
 	}
 	for peer := range host_peers {
-		s.SendPeerUncommittedLogEntries(peer)
+		s.SendPeerUncommittedLogEntries(ctx, group, peer)
 	}
 }
 
