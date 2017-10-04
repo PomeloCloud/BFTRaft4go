@@ -129,21 +129,31 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		lastLogEntry := s.LastLogEntry(groupId)
 		lastLogIdx := s.GetGroupLogLastIndex(groupId)
 		nextLogIdx := lastLogIdx + 1
-		expectedNextHash, _ := LogHash(lastLogHash, nextLogIdx)
 		if lastLogEntry.Index != lastLogIdx {
 			// this is unexpected, should be detected quickly
 			panic("Log list unmatched with last log index")
 		}
-		if req.PrevLogIndex == lastLogIdx { // index matched
-			if req.PrevLogTerm != lastLogEntry.Term || !bytes.Equal(req.Entries[0].Hash, expectedNextHash) {
+		if req.PrevLogIndex == lastLogIdx && req.Entries[0].Index == nextLogIdx { // index matched
+			if req.PrevLogTerm != lastLogEntry.Term {
 				// log mismatch, cannot preceded
 				// what to do next will leave to the leader
 				return response, nil
 			} else {
 				// first log matched
-				// but we still need to check hash for next upcoming logs
+				// but we still need to check hash for upcoming logs
+				expectedHash := s.LastEntryHash(groupId)
+				for i := nextLogIdx; i < nextLogIdx + uint64(len(req.Entries)); i++ {
+					expectedHash, _ = LogHash(expectedHash, i)
+					entry := req.Entries[i - nextLogIdx]
+					if entry.Index != i || !bytes.Equal(entry.Hash, expectedHash) {
+						// not all entries match
+						return response, nil
+					}
+				}
 
 			}
+		} else {
+			return response, nil
 		}
 	}
 	return nil, nil
