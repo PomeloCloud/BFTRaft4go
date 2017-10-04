@@ -6,12 +6,12 @@ import (
 )
 
 const (
-	LOG_ENTRIES   = 0
-	GROUP_PEERS   = 1
-	GROUP_META    = 2
-	NODES_LIST    = 3
-	GROUP_MAX_IDX = 4
-	SERVER_CONF   = 100
+	LOG_ENTRIES    = 0
+	GROUP_PEERS    = 1
+	GROUP_META     = 2
+	NODES_LIST     = 3
+	GROUP_LAST_IDX = 4
+	SERVER_CONF    = 100
 )
 
 const (

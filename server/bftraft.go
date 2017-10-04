@@ -11,6 +11,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"bytes"
 )
 
 type Options struct {
@@ -63,7 +64,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			}
 		} else { // the node is the leader to this group
 			response.LeaderId = leader_peer.Id
-			index := s.IncrGetGroupLogMaxIndex(group_id)
+			index := s.IncrGetGroupLogLastIndex(group_id)
 			hash, _ := LogHash(s.LastEntryHash(group_id), index)
 			logEntry := pb.LogEntry{
 				Term:    group.Term,
@@ -80,50 +81,68 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	return response, nil
 }
 
-func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.Nothing, error) {
+func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	groupId := req.Group
 	group := s.GetGroup(groupId)
-	leaderId := req.LeaderId
-	leaderPeer := s.GetPeer(groupId, leaderId)
-	//response := *pb.AppendEntriesResponse{
-	//	Group: groupId,
-	//	Term: group.Term,
-	//	Index: s.GetGroupLogMaxIndex(groupId),
-	//	NodeId: s.Id,
-	//	Successed: false,
-	//	Convinced: true,
-	//	Hash:
-	//}
-	nothing := &pb.Nothing{}
+	reqLeaderId := req.LeaderId
+	leaderPeer := s.GetPeer(groupId, reqLeaderId)
+	lastLogHash := s.LastEntryHash(groupId)
+	response := &pb.AppendEntriesResponse{
+		Group:     groupId,
+		Term:      group.Term,
+		Index:     s.GetGroupLogLastIndex(groupId),
+		NodeId:    s.Id,
+		Successed: false,
+		Convinced: false,
+		Hash:      lastLogHash,
+		Signature: s.Sign(lastLogHash),
+	}
 	// verify group and leader existence
 	if group == nil || leaderPeer == nil {
-		return nothing, nil
+		return response, nil
 	}
 	// check leader transfer
-	if group.LeaderPeer != leaderId { // TODO: check for leader transfer
-		return &pb.Nothing{}, nil
+	if group.LeaderPeer != reqLeaderId { // TODO: check for leader transfer
+		return response, nil
 	}
 	// check leader node exists
 	leaderNode := s.GetNode(leaderPeer.Host)
 	if leaderPeer == nil {
-		return nothing, nil
+		return response, nil
 	}
 	// verify signature
 	if leaderPublicKey, err := ParsePublicKey(leaderNode.PublicKey); err != nil {
 		signData := AppendLogEntrySignData(group.Id, group.Term, req.PrevLogIndex, req.PrevLogTerm)
 		if VerifySign(leaderPublicKey, req.Signature, signData) != nil {
-			return nothing, nil
+			return response, nil
 		}
 	} else {
-		return nothing, nil
+		return response, nil
 	}
-	// check log match
 	if len(req.Entries) > 0 {
-		iter := s.ReversedLogIterator(groupId)
-		for true {
-			log := iter.Next()
-			if log == nil {
-				break
+		// check last log matches the first provided by the leader
+		// this strategy assumes split brain will never happened (on internet)
+		// the leader will always provide the entries no more than it needed
+		// if the leader failed to provide the right first entries, the follower
+		// 	 will not commit the log but response with current log index and term instead
+		// the leader should response immediately for failed follower response
+		lastLogEntry := s.LastLogEntry(groupId)
+		lastLogIdx := s.GetGroupLogLastIndex(groupId)
+		nextLogIdx := lastLogIdx + 1
+		expectedNextHash, _ := LogHash(lastLogHash, nextLogIdx)
+		if lastLogEntry.Index != lastLogIdx {
+			// this is unexpected, should be detected quickly
+			panic("Log list unmatched with last log index")
+		}
+		if req.PrevLogIndex == lastLogIdx { // index matched
+			if req.PrevLogTerm != lastLogEntry.Term || !bytes.Equal(req.Entries[0].Hash, expectedNextHash) {
+				// log mismatch, cannot preceded
+				// what to do next will leave to the leader
+				return response, nil
+			} else {
+				// first log matched
+				// but we still need to check hash for next upcoming logs
+
 			}
 		}
 	}

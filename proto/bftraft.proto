@@ -8,7 +8,7 @@ package bftraft;
 service BFTRaft {
     rpc ExecCommand (CommandRequest) returns (CommandResponse) {}
     rpc RequestVote (RequestVoteRequest) returns (RequestVoteResponse) {}
-    rpc AppendEntries (AppendEntriesRequest) returns (Nothing) {}
+    rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesResponse) {}
 }
 
 message CommandRequest {

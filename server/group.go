@@ -30,8 +30,8 @@ func (s *BFTRaftServer) GetGroup(groupId uint64) *pb.RaftGroup {
 	}
 }
 
-func (s *BFTRaftServer) GetGroupLogMaxIndex(groupId uint64) uint64 {
-	key := ComposeKeyPrefix(groupId, GROUP_MAX_IDX)
+func (s *BFTRaftServer) GetGroupLogLastIndex(groupId uint64) uint64 {
+	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
 	item := badger.KVItem{}
 	s.DB.Get(key, &item)
 	data := ItemValue(&item)
@@ -42,8 +42,8 @@ func (s *BFTRaftServer) GetGroupLogMaxIndex(groupId uint64) uint64 {
 	return idx
 }
 
-func (s *BFTRaftServer) IncrGetGroupLogMaxIndex(groupId uint64) uint64 {
-	key := ComposeKeyPrefix(groupId, GROUP_MAX_IDX)
+func (s *BFTRaftServer) IncrGetGroupLogLastIndex(groupId uint64) uint64 {
+	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
 	for true {
 		item := badger.KVItem{}
 		s.DB.Get(key, &item)
