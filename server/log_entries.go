@@ -13,6 +13,15 @@ type LogEntryIterator struct {
 	data   *badger.Iterator
 }
 
+type LogAppendError struct {
+	msg string
+}
+
+
+func (e *LogAppendError) Error() string {
+	return fmt.Sprintf("%s", e.msg)
+}
+
 func (liter *LogEntryIterator) Next() *pb.LogEntry {
 	liter.data.Next()
 	if liter.data.ValidForPrefix(liter.prefix) {
@@ -67,11 +76,11 @@ func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry pb.LogEntr
 	if err != nil {
 		return err
 	} else if existed {
-		return error("Entry existed")
+		return &LogAppendError{"Entry existed"}
 	} else {
 		hash, _ := LogHash(s.LastEntryHash(group_id), entry.Index)
 		if !bytes.Equal(hash, entry.Hash) {
-			return error("Log entry hash mismatch")
+			return &LogAppendError{"Log entry hash mismatch"}
 		}
 		if data, err := proto.Marshal(&entry); err != nil {
 			s.DB.Set(key, data, 0x00)

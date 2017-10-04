@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto"
 	"github.com/dgraph-io/badger"
@@ -101,4 +100,14 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 			})
 		}()
 	}
+}
+
+func (s *BFTRaftServer) GroupServerPeer(groupId uint64) *pb.Peer {
+	peers := s.GetGroupPeers(groupId)
+	for _, peer := range peers {
+		if peer.Host == s.Id {
+			return peer
+		}
+	}
+	return nil
 }

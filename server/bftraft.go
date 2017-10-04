@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"crypto/rsa"
 	"flag"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto"
@@ -11,7 +12,6 @@ import (
 	"net"
 	"sync"
 	"time"
-	"bytes"
 )
 
 type Options struct {
@@ -63,6 +63,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				return client.rpc.ExecCommand(ctx, cmd)
 			}
 		} else { // the node is the leader to this group
+			// TODO: verify client signature
 			response.LeaderId = leader_peer.Id
 			index := s.IncrGetGroupLogLastIndex(group_id)
 			hash, _ := LogHash(s.LastEntryHash(group_id), index)
@@ -73,7 +74,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				Command: cmd,
 			}
 			if s.AppendEntryToLocal(group, logEntry) == nil {
-				s.SendFollowersHeartbeat(ctx, group)
+				s.SendFollowersHeartbeat(ctx, leader_peer_id, group)
 				response.Result = *s.WaitLogAppended(group_id, index)
 			}
 		}
@@ -87,18 +88,23 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	reqLeaderId := req.LeaderId
 	leaderPeer := s.GetPeer(groupId, reqLeaderId)
 	lastLogHash := s.LastEntryHash(groupId)
+	thisPeer := s.GroupServerPeer(groupId)
+	thisPeerId := uint64(0)
+	if thisPeer != nil {
+		thisPeerId = thisPeer.Id
+	}
 	response := &pb.AppendEntriesResponse{
 		Group:     groupId,
 		Term:      group.Term,
 		Index:     s.GetGroupLogLastIndex(groupId),
-		NodeId:    s.Id,
 		Successed: false,
 		Convinced: false,
 		Hash:      lastLogHash,
 		Signature: s.Sign(lastLogHash),
+		Peer:      thisPeerId,
 	}
 	// verify group and leader existence
-	if group == nil || leaderPeer == nil {
+	if thisPeer == nil || group == nil || leaderPeer == nil {
 		return response, nil
 	}
 	// check leader transfer
@@ -142,20 +148,59 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				// first log matched
 				// but we still need to check hash for upcoming logs
 				expectedHash := s.LastEntryHash(groupId)
-				for i := nextLogIdx; i < nextLogIdx + uint64(len(req.Entries)); i++ {
+				for i := nextLogIdx; i < nextLogIdx+uint64(len(req.Entries)); i++ {
 					expectedHash, _ = LogHash(expectedHash, i)
-					entry := req.Entries[i - nextLogIdx]
+					entry := req.Entries[i-nextLogIdx]
 					if entry.Index != i || !bytes.Equal(entry.Hash, expectedHash) {
 						// not all entries match
 						return response, nil
 					}
+					// TODO: verify client signature
 				}
+				response.Convinced = true
+				// here start the loop of sending approve request to all peers
+				// the followers may have multiply uncommitted entries so we need to
+				//		approve them one by one and wait their response for confirmation.
+				//		this is crucial to ensure log correctness and updated
+				// to respond to 'ApproveAppend' RPC, the server should response with:
+				// 		1. appended if the server have already committed the entry
+				// 			(this follower was fallen behind)
+				//		2. delayed if the server is also waiting for other peers to confirm or
+				// 			it is not yet reach to this log index
+				//		3. failed if the group/peer/signature check was failed
+				// so there is 2 way to make the append confirmation
+				//		1. through the 'ApprovedAppend' from other peers
+				//		2. through the appended 'ApproveAppendResponse' for catch up
+				groupPeers := s.GetGroupPeers(groupId)
+				for _, entry := range req.Entries {
+					for _, peer := range groupPeers {
+						if node := s.GetNode(peer.Host); node != nil {
+							if client, err := s.Clients.Get(node.ServerAddr); err == nil {
+								response.Term = entry.Term
+								response.Index = entry.Index
+								response.Hash = entry.Hash
+								response.Signature = s.Sign(entry.Hash)
+								go func() {
+									if apprpveRes, err := client.rpc.ApproveAppend(ctx, response); err != nil {
 
+									}
+								}()
+							}
+						}
+					}
+				}
 			}
 		} else {
 			return response, nil
 		}
 	}
+	return nil, nil
+}
+
+func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntriesResponse) (*pb.ApproveAppendResponse, error) {
+	//groupId := req.Group
+	//group := s.GetGroup(groupId)
+
 	return nil, nil
 }
 
@@ -167,14 +212,16 @@ func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func
 	s.FuncReg[group][func_id] = fn
 }
 
-func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, group *pb.RaftGroup) {
+func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_id uint64, group *pb.RaftGroup) {
 	group_peers := s.GetGroupPeers(group.Id)
 	host_peers := map[*pb.Peer]bool{}
 	for _, peer := range group_peers {
 		host_peers[peer] = true
 	}
 	for peer := range host_peers {
-		s.SendPeerUncommittedLogEntries(ctx, group, peer)
+		if peer.Id != leader_peer_id {
+			s.SendPeerUncommittedLogEntries(ctx, group, peer)
+		}
 	}
 }
 

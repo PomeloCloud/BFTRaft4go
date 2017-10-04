@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/binary"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
