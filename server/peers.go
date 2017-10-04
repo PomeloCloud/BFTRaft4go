@@ -75,10 +75,6 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 	return entries, prevEntry
 }
 
-func AppendLogEntrySignData(groupId uint64, term uint64, prevIndex uint64, prevTerm uint64) []byte {
-	return []byte(fmt.Sprint(groupId, "-", term, "-", prevIndex, "-", prevTerm))
-}
-
 func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group *pb.RaftGroup, peer *pb.Peer) {
 	node := s.GetNode(peer.Host)
 	if node == nil {

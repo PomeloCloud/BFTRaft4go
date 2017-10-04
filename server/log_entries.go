@@ -90,3 +90,12 @@ func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry pb.LogEntr
 		}
 	}
 }
+
+func AppendLogEntrySignData(groupId uint64, term uint64, prevIndex uint64, prevTerm uint64) []byte {
+	return []byte(fmt.Sprint(groupId, "-", term, "-", prevIndex, "-", prevTerm))
+}
+
+func ApproveAppendSignData(res *pb.ApproveAppendResponse) []byte {
+	bs1 := append(U64Bytes(res.Peer), byte(res.Appended), byte(res.Delayed), byte(res.Failed))
+	return append(bs1, U64Bytes(res.Index)...)
+}

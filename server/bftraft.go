@@ -33,6 +33,7 @@ type BFTRaftServer struct {
 	Nodes             *cache.Cache
 	GroupAppendedLogs *cache.Cache
 	GroupAppendLogRes *cache.Cache
+	NodePublicKeys    *cache.Cache
 	PrivateKey        *rsa.PrivateKey
 	Clients           ClientStore
 	lock              *sync.RWMutex
@@ -117,7 +118,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		return response, nil
 	}
 	// verify signature
-	if leaderPublicKey, err := ParsePublicKey(leaderNode.PublicKey); err != nil {
+	if leaderPublicKey := s.GetNodePublicKey(leaderNode.Id); leaderPublicKey != nil {
 		signData := AppendLogEntrySignData(group.Id, group.Term, req.PrevLogIndex, req.PrevLogTerm)
 		if VerifySign(leaderPublicKey, req.Signature, signData) != nil {
 			return response, nil
@@ -181,8 +182,14 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 								response.Hash = entry.Hash
 								response.Signature = s.Sign(entry.Hash)
 								go func() {
-									if apprpveRes, err := client.rpc.ApproveAppend(ctx, response); err != nil {
-
+									if approveRes, err := client.rpc.ApproveAppend(ctx, response); err != nil {
+										if VerifySign(
+											s.GetNodePublicKey(node.Id),
+											approveRes.Signature,
+											ApproveAppendSignData(approveRes),
+										) == nil {
+											if
+										}
 									}
 								}()
 							}
@@ -258,6 +265,7 @@ func start(serverOpts Options) error {
 		Nodes:             cache.New(1*time.Minute, 1*time.Minute),
 		GroupAppendLogRes: cache.New(2*time.Minute, 1*time.Minute),
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
+		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
 		PrivateKey:        privateKey,
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)

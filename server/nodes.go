@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/rsa"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
@@ -50,4 +51,18 @@ func (s *BFTRaftServer) GetNode(nodeId uint64) *pb.Node {
 	proto.Unmarshal(*data, &node)
 	s.Nodes.Set(cacheKey, &node, cache.DefaultExpiration)
 	return &node
+}
+
+func (s *BFTRaftServer) GetNodePublicKey(nodeId uint64) *rsa.PublicKey {
+	cacheKey := strconv.Itoa(int(nodeId))
+	if cachedKey, cacheFound := s.NodePublicKeys.Get(cacheKey); cacheFound {
+		return cachedKey.(*rsa.PublicKey)
+	}
+	node := s.GetNode(nodeId)
+	if key, err := ParsePublicKey(node.PublicKey); err == nil {
+		s.NodePublicKeys.Set(cacheKey, &key, cache.DefaultExpiration)
+		return key
+	} else {
+		return nil
+	}
 }
