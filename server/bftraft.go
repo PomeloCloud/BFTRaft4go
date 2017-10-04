@@ -62,8 +62,9 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				return client.rpc.ExecCommand(ctx, cmd)
 			}
 		} else { // the node is the leader to this group
-			hash, _ := SHA1Hash(s.LastEntryHash(group_id))
+			response.LeaderId = leader_peer.Id
 			index := s.IncrGetGroupLogMaxIndex(group_id)
+			hash, _ := LogHash(s.LastEntryHash(group_id), index)
 			logEntry := pb.LogEntry{
 				Term:    group.Term,
 				Index:   index,
@@ -79,11 +80,57 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	return response, nil
 }
 
-func (s *BFTRaftServer) RequestVote(context.Context, *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
+func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.Nothing, error) {
+	groupId := req.Group
+	group := s.GetGroup(groupId)
+	leaderId := req.LeaderId
+	leaderPeer := s.GetPeer(groupId, leaderId)
+	//response := *pb.AppendEntriesResponse{
+	//	Group: groupId,
+	//	Term: group.Term,
+	//	Index: s.GetGroupLogMaxIndex(groupId),
+	//	NodeId: s.Id,
+	//	Successed: false,
+	//	Convinced: true,
+	//	Hash:
+	//}
+	nothing := &pb.Nothing{}
+	// verify group and leader existence
+	if group == nil || leaderPeer == nil {
+		return nothing, nil
+	}
+	// check leader transfer
+	if group.LeaderPeer != leaderId { // TODO: check for leader transfer
+		return &pb.Nothing{}, nil
+	}
+	// check leader node exists
+	leaderNode := s.GetNode(leaderPeer.Host)
+	if leaderPeer == nil {
+		return nothing, nil
+	}
+	// verify signature
+	if leaderPublicKey, err := ParsePublicKey(leaderNode.PublicKey); err != nil {
+		signData := AppendLogEntrySignData(group.Id, group.Term, req.PrevLogIndex, req.PrevLogTerm)
+		if VerifySign(leaderPublicKey, req.Signature, signData) != nil {
+			return nothing, nil
+		}
+	} else {
+		return nothing, nil
+	}
+	// check log match
+	if len(req.Entries) > 0 {
+		iter := s.ReversedLogIterator(groupId)
+		for true {
+			log := iter.Next()
+			if log == nil {
+				break
+			}
+		}
+	}
 	return nil, nil
 }
 
-func (s *BFTRaftServer) AppendEntries(context.Context, *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
+func (s *BFTRaftServer) RequestVote(context.Context, *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
 	return nil, nil
 }
 

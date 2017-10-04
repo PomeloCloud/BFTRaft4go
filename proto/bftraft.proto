@@ -7,8 +7,8 @@ package bftraft;
 
 service BFTRaft {
     rpc ExecCommand (CommandRequest) returns (CommandResponse) {}
-    rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse) {}
-    rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse) {}
+    rpc RequestVote (RequestVoteRequest) returns (RequestVoteResponse) {}
+    rpc AppendEntries (AppendEntriesRequest) returns (Nothing) {}
 }
 
 message CommandRequest {
@@ -87,9 +87,9 @@ message Node {
     uint64 id = 1;
     uint64 last_seen = 2;
     bool online = 3;
-    string public_key = 4;
-    string server_addr = 5;
-    repeated uint64 peers = 6; 
+    string server_addr = 4;
+    bytes public_key = 5;
+    repeated uint64 peers = 6;
 }
 
 message RaftGroup {
@@ -103,3 +103,5 @@ message RaftGroup {
 message ServerConfig {
     bytes public_key = 1;
 }
+
+message Nothing {}

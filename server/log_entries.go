@@ -54,6 +54,8 @@ func (s *BFTRaftServer) LastEntryHash(group_id uint64) []byte {
 	lastLog := s.LastLogEntry(group_id)
 	if lastLog == nil {
 		hash, _ = SHA1Hash([]byte(fmt.Sprint("GROUP:", group_id)))
+	} else {
+		hash = lastLog.Hash
 	}
 	return hash
 }
@@ -67,7 +69,7 @@ func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry pb.LogEntr
 	} else if existed {
 		return error("Entry existed")
 	} else {
-		hash, _ := SHA1Hash(s.LastEntryHash(group_id))
+		hash, _ := LogHash(s.LastEntryHash(group_id), entry.Index)
 		if !bytes.Equal(hash, entry.Hash) {
 			return error("Log entry hash mismatch")
 		}

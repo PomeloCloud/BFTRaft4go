@@ -59,3 +59,8 @@ func SHA1Hash(data []byte) ([]byte, crypto.Hash) {
 	h.Write(data)
 	return h.Sum(nil), hash
 }
+
+func LogHash(prevHash []byte, index uint64) ([]byte, crypto.Hash) {
+	// combine index to prevent unordered log sequences
+	return SHA1Hash(append(prevHash, U64Bytes(index)...))
+}

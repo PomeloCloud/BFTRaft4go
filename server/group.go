@@ -9,14 +9,14 @@ import (
 	"strconv"
 )
 
-func (s *BFTRaftServer) GetGroup(group_id uint64) *pb.RaftGroup {
-	cacheKey := strconv.Itoa(int(group_id))
+func (s *BFTRaftServer) GetGroup(groupId uint64) *pb.RaftGroup {
+	cacheKey := strconv.Itoa(int(groupId))
 	cachedGroup, cacheFound := s.Groups.Get(cacheKey)
 	if cacheFound {
 		return cachedGroup.(*pb.RaftGroup)
 	} else {
 		group := &pb.RaftGroup{}
-		keyPrefix := ComposeKeyPrefix(group_id, GROUP_META)
+		keyPrefix := ComposeKeyPrefix(groupId, GROUP_META)
 		item := badger.KVItem{}
 		s.DB.Get(keyPrefix, &item)
 		data := ItemValue(&item)
@@ -30,8 +30,20 @@ func (s *BFTRaftServer) GetGroup(group_id uint64) *pb.RaftGroup {
 	}
 }
 
-func (s *BFTRaftServer) IncrGetGroupLogMaxIndex(group_id uint64) uint64 {
-	key := ComposeKeyPrefix(group_id, GROUP_MAX_IDX)
+func (s *BFTRaftServer) GetGroupLogMaxIndex(groupId uint64) uint64 {
+	key := ComposeKeyPrefix(groupId, GROUP_MAX_IDX)
+	item := badger.KVItem{}
+	s.DB.Get(key, &item)
+	data := ItemValue(&item)
+	var idx uint64 = 0
+	if data != nil {
+		idx = BytesU64(*data, 0)
+	}
+	return idx
+}
+
+func (s *BFTRaftServer) IncrGetGroupLogMaxIndex(groupId uint64) uint64 {
+	key := ComposeKeyPrefix(groupId, GROUP_MAX_IDX)
 	for true {
 		item := badger.KVItem{}
 		s.DB.Get(key, &item)

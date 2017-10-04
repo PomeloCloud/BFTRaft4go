@@ -52,7 +52,7 @@ func (s *BFTRaftServer) GetPeer(group uint64, peer_id uint64) *pb.Peer {
 func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.Peer) ([]*pb.LogEntry, *pb.LogEntry) {
 	iter := s.ReversedLogIterator(group.Id)
 	nextLogIdx := peer.NextIndex
-	result := []*pb.LogEntry{}
+	entries := []*pb.LogEntry{}
 	prevEntry := &pb.LogEntry{
 		Term:  0,
 		Index: 0,
@@ -66,9 +66,14 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 		if entry.Index < nextLogIdx {
 			break
 		}
-		result = append(result, entry)
+		entries = append(entries, entry)
 	}
-	return result, prevEntry
+	// reverse so the first will be the one with least index
+	for i := 0; i < len(entries)/2; i++ {
+		j := len(entries) - i - 1
+		entries[i], entries[j] = entries[j], entries[i]
+	}
+	return entries, prevEntry
 }
 
 func AppendLogEntrySignData(groupId uint64, term uint64, prevIndex uint64, prevTerm uint64) []byte {
