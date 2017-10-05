@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"crypto/rsa"
 	"flag"
-	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
+	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/dgraph-io/badger"
 	"github.com/patrickmn/go-cache"
 	context "golang.org/x/net/context"
@@ -220,10 +220,10 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 							reqId := entry.Command.RequestId
 							signData := CommandSignData(groupId, nodeId, reqId, *result)
 							rpc.rpc.ResponseCommand(ctx, &cpb.CommandResult{
-								Group: groupId,
-								NodeId: nodeId,
+								Group:     groupId,
+								NodeId:    nodeId,
 								RequestId: reqId,
-								Result: *result,
+								Result:    *result,
 								Signature: s.Sign(signData),
 							})
 						}

@@ -2,9 +2,9 @@ package server
 
 import (
 	"fmt"
+	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/patrickmn/go-cache"
 	"time"
-	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 )
 
 func (s *BFTRaftServer) prepareApproveChan(groupId uint64, logIndex uint64) {
@@ -19,10 +19,10 @@ func (s *BFTRaftServer) WaitLogApproved(groupId uint64, logIndex uint64) bool {
 	cache_key := fmt.Sprint(groupId, "-", logIndex)
 	cache_chan, _ := s.GroupAppendedLogs.Get(cache_key)
 	select {
-		case approved:=  <- cache_chan.(chan bool):
-			return approved
-		case <- time.After(s.Opts.ConsensusTimeout):
-			return false
+	case approved := <-cache_chan.(chan bool):
+		return approved
+	case <-time.After(s.Opts.ConsensusTimeout):
+		return false
 	}
 }
 
@@ -36,7 +36,7 @@ func (s *BFTRaftServer) SetLogAppended(groupId uint64, logIndex uint64, isApprov
 
 func ExpectedHonestPeers(group_peers []*pb.Peer) int {
 	num_peers := len(group_peers)
-	return num_peers - (num_peers - 1) / 3
+	return num_peers - (num_peers-1)/3
 }
 
 func (s *BFTRaftServer) PeerApprovedAppend(groupId uint64, logIndex uint64, peer uint64, group_peers []*pb.Peer, isApproved bool) {
@@ -53,9 +53,9 @@ func (s *BFTRaftServer) PeerApprovedAppend(groupId uint64, logIndex uint64, peer
 		rejectedVotes := 0
 		for _, vote := range approvedPeersMap {
 			if vote {
-				approvedVotes ++
+				approvedVotes++
 			} else {
-				rejectedVotes ++
+				rejectedVotes++
 			}
 		}
 		if approvedVotes > expectedVotes {
