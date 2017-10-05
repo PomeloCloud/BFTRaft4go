@@ -35,7 +35,8 @@ type BFTRaftServer struct {
 	GroupApprovedLogs *cache.Cache
 	NodePublicKeys    *cache.Cache
 	PrivateKey        *rsa.PrivateKey
-	ClusterClients    ClientStore
+	ClusterClients    ClusterClientStore
+	Clients           ClientStore
 	lock              *sync.RWMutex
 }
 
@@ -207,6 +208,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						s.AppendEntryToLocal(group, entry)
 					}
 					lastResult = s.CommitGroupLog(groupId, entry.Command)
+
 				}
 			}
 		} else {
@@ -271,6 +273,7 @@ func start(serverOpts Options) error {
 		Opts:              serverOpts,
 		DB:                db,
 		ClusterClients:    NewClusterClientStore(),
+		Clients:           NewClientStore(),
 		Groups:            cache.New(1*time.Minute, 1*time.Minute),
 		GroupsPeers:       cache.New(1*time.Minute, 1*time.Minute),
 		Peers:             cache.New(1*time.Minute, 1*time.Minute),

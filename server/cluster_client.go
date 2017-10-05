@@ -13,12 +13,12 @@ type ClusterClient struct {
 	rpc  pb.BFTRaftClient
 }
 
-type ClientStore struct {
+type ClusterClientStore struct {
 	clients *cache.Cache
 	lock    sync.Mutex
 }
 
-func (cs *ClientStore) Get(serverAddr string) (*ClusterClient, error) {
+func (cs *ClusterClientStore) Get(serverAddr string) (*ClusterClient, error) {
 	if cachedClient, cachedFound := cs.clients.Get(serverAddr); cachedFound {
 		return cachedClient.(*ClusterClient), nil
 	}
@@ -37,8 +37,8 @@ func (cs *ClientStore) Get(serverAddr string) (*ClusterClient, error) {
 	return &client, nil
 }
 
-func NewClusterClientStore() ClientStore {
-	store := ClientStore{
+func NewClusterClientStore() ClusterClientStore {
+	store := ClusterClientStore{
 		clients: cache.New(10*time.Minute, 5*time.Minute),
 	}
 	store.clients.OnEvicted(func(host string, clientI interface{}) {
