@@ -80,7 +80,7 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 	if node == nil {
 		return
 	}
-	if client, err := s.Clients.Get(node.ServerAddr); err != nil {
+	if client, err := s.ClusterClients.Get(node.ServerAddr); err != nil {
 		go func() {
 			entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
 			signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)

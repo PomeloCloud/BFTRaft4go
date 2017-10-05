@@ -1,0 +1,22 @@
+// This file is client server protocal for BFT raft implementation
+// Because each peer need to send response right to client for result voting,
+// client server is required in this system
+
+syntax = "proto3";
+package client;
+
+service BFTRaftClient {
+    rpc ResponseCommand(CommandResult) returns (Nothing) {}
+}
+
+message CommandResult {
+    uint64 group = 1;
+    uint64 peer_id = 2;
+    uint64 node_id = 3;
+    uint64 request_id = 4;
+    bytes signature = 5;
+    bytes result = 6;
+}
+
+
+message Nothing {}

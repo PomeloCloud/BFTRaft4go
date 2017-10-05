@@ -35,7 +35,7 @@ type BFTRaftServer struct {
 	GroupApprovedLogs *cache.Cache
 	NodePublicKeys    *cache.Cache
 	PrivateKey        *rsa.PrivateKey
-	Clients           ClientStore
+	ClusterClients    ClientStore
 	lock              *sync.RWMutex
 }
 
@@ -60,7 +60,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	}
 	if leader_node := s.GetNode(leader_peer.Host); leader_node != nil {
 		if leader_node.Id != s.Id {
-			if client, err := s.Clients.Get(leader_node.ServerAddr); err != nil {
+			if client, err := s.ClusterClients.Get(leader_node.ServerAddr); err != nil {
 				return client.rpc.ExecCommand(ctx, cmd)
 			}
 		} else { // the node is the leader to this group
@@ -76,7 +76,9 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			}
 			if s.AppendEntryToLocal(group, &logEntry) == nil {
 				s.SendFollowersHeartbeat(ctx, leader_peer_id, group)
-				response.Result = s.WaitLogApproved(group_id, index)
+				if s.WaitLogApproved(group_id, index) {
+					response.Result = *s.CommitGroupLog(group_id, cmd)
+				}
 			}
 		}
 	}
@@ -173,10 +175,14 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				//		1. through the 'ApprovedAppend' from other peers
 				//		2. through the appended 'ApproveAppendResponse' for catch up
 				groupPeers := s.GetGroupPeers(groupId)
+				var lastResult *[]byte = nil
 				for _, entry := range req.Entries {
 					for _, peer := range groupPeers {
+						if peer.Host == s.Id {
+							continue
+						}
 						if node := s.GetNode(peer.Host); node != nil {
-							if client, err := s.Clients.Get(node.ServerAddr); err == nil {
+							if client, err := s.ClusterClients.Get(node.ServerAddr); err == nil {
 								response.Term = entry.Term
 								response.Index = entry.Index
 								response.Hash = entry.Hash
@@ -200,7 +206,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 					if s.WaitLogApproved(groupId, entry.Index) {
 						s.AppendEntryToLocal(group, entry)
 					}
-					// TODO: Commit log
+					lastResult = s.CommitGroupLog(groupId, entry.Command)
 				}
 			}
 		} else {
@@ -264,7 +270,7 @@ func start(serverOpts Options) error {
 		Id:                HashPublicKey(PublicKeyFromPrivate(privateKey)),
 		Opts:              serverOpts,
 		DB:                db,
-		Clients:           NewClientStore(),
+		ClusterClients:    NewClusterClientStore(),
 		Groups:            cache.New(1*time.Minute, 1*time.Minute),
 		GroupsPeers:       cache.New(1*time.Minute, 1*time.Minute),
 		Peers:             cache.New(1*time.Minute, 1*time.Minute),

@@ -17,7 +17,6 @@ type LogAppendError struct {
 	msg string
 }
 
-
 func (e *LogAppendError) Error() string {
 	return fmt.Sprintf("%s", e.msg)
 }
@@ -98,4 +97,11 @@ func AppendLogEntrySignData(groupId uint64, term uint64, prevIndex uint64, prevT
 func ApproveAppendSignData(res *pb.ApproveAppendResponse) []byte {
 	bs1 := append(U64Bytes(res.Peer), byte(res.Appended), byte(res.Delayed), byte(res.Failed))
 	return append(bs1, U64Bytes(res.Index)...)
+}
+
+func (s *BFTRaftServer) CommitGroupLog(groupId uint64, cmd *pb.CommandRequest) *[]byte {
+	funcId := cmd.FuncId
+	fun := s.FuncReg[groupId][funcId]
+	input := cmd.Arg
+	return &fun(input)
 }
