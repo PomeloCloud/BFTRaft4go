@@ -18,5 +18,4 @@ message CommandResult {
     bytes result = 6;
 }
 
-
 message Nothing {}
