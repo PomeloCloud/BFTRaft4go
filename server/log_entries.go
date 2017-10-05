@@ -94,8 +94,16 @@ func AppendLogEntrySignData(groupId uint64, term uint64, prevIndex uint64, prevT
 	return []byte(fmt.Sprint(groupId, "-", term, "-", prevIndex, "-", prevTerm))
 }
 
+func EB(b bool) byte {
+	if b {
+		return byte(1)
+	} else {
+		return byte(0)
+	}
+}
+
 func ApproveAppendSignData(res *pb.ApproveAppendResponse) []byte {
-	bs1 := append(U64Bytes(res.Peer), byte(res.Appended), byte(res.Delayed), byte(res.Failed))
+	bs1 := append(U64Bytes(res.Peer), EB(res.Appended), EB(res.Delayed), EB(res.Failed))
 	return append(bs1, U64Bytes(res.Index)...)
 }
 
@@ -103,5 +111,6 @@ func (s *BFTRaftServer) CommitGroupLog(groupId uint64, cmd *pb.CommandRequest) *
 	funcId := cmd.FuncId
 	fun := s.FuncReg[groupId][funcId]
 	input := cmd.Arg
-	return &fun(input)
+	result := fun(input)
+	return &result
 }

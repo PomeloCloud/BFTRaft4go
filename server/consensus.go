@@ -45,7 +45,7 @@ func (s *BFTRaftServer) PeerApprovedAppend(groupId uint64, logIndex uint64, peer
 		s.GroupApprovedLogs.Set(cache_key, map[uint64]bool{}, cache.DefaultExpiration)
 	}
 	approvedPeers, _ := s.GroupApprovedLogs.Get(cache_key)
-	approvedPeersMap := approvedPeers.(map[uint64]bool{})
+	approvedPeersMap := approvedPeers.(map[uint64]bool)
 	approvedPeersMap[peer] = isApproved
 	expectedVotes := ExpectedHonestPeers(group_peers)
 	if len(approvedPeersMap) > expectedVotes {
