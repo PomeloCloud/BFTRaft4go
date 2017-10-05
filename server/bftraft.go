@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"flag"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
 	"github.com/dgraph-io/badger"
 	"github.com/patrickmn/go-cache"
 	context "golang.org/x/net/context"
@@ -31,12 +32,14 @@ type BFTRaftServer struct {
 	Groups            *cache.Cache
 	GroupsPeers       *cache.Cache
 	Nodes             *cache.Cache
+	Clients           *cache.Cache
 	GroupAppendedLogs *cache.Cache
 	GroupApprovedLogs *cache.Cache
 	NodePublicKeys    *cache.Cache
+	ClientPublicKeys  *cache.Cache
 	PrivateKey        *rsa.PrivateKey
 	ClusterClients    ClusterClientStore
-	Clients           ClientStore
+	ClientRPCs        ClientStore
 	lock              *sync.RWMutex
 }
 
@@ -53,7 +56,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 		LeaderId:  0,
 		NodeId:    s.Id,
 		RequestId: cmd.RequestId,
-		Signature: s.Sign(U64Bytes(cmd.RequestId)),
+		Signature: s.Sign(CommandSignData(group_id, s.Id, cmd.RequestId, []byte{})),
 		Result:    []byte{},
 	}
 	if leader_peer == nil {
@@ -83,6 +86,9 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			}
 		}
 	}
+	response.Signature = s.Sign(CommandSignData(
+		response.Group, response.NodeId, response.RequestId, response.Result,
+	))
 	return response, nil
 }
 
@@ -176,7 +182,6 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				//		1. through the 'ApprovedAppend' from other peers
 				//		2. through the appended 'ApproveAppendResponse' for catch up
 				groupPeers := s.GetGroupPeers(groupId)
-				var lastResult *[]byte = nil
 				for _, entry := range req.Entries {
 					for _, peer := range groupPeers {
 						if peer.Host == s.Id {
@@ -207,8 +212,22 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 					if s.WaitLogApproved(groupId, entry.Index) {
 						s.AppendEntryToLocal(group, entry)
 					}
-					lastResult = s.CommitGroupLog(groupId, entry.Command)
-
+					result := s.CommitGroupLog(groupId, entry.Command)
+					client := s.GetClient(entry.Command.ClientId)
+					if client != nil {
+						if rpc, err := s.ClientRPCs.Get(client.Address); err == nil {
+							nodeId := s.Id
+							reqId := entry.Command.RequestId
+							signData := CommandSignData(groupId, nodeId, reqId, *result)
+							rpc.rpc.ResponseCommand(ctx, &cpb.CommandResult{
+								Group: groupId,
+								NodeId: nodeId,
+								RequestId: reqId,
+								Result: *result,
+								Signature: s.Sign(signData),
+							})
+						}
+					}
 				}
 			}
 		} else {
@@ -273,14 +292,16 @@ func start(serverOpts Options) error {
 		Opts:              serverOpts,
 		DB:                db,
 		ClusterClients:    NewClusterClientStore(),
-		Clients:           NewClientStore(),
+		ClientRPCs:        NewClientStore(),
 		Groups:            cache.New(1*time.Minute, 1*time.Minute),
 		GroupsPeers:       cache.New(1*time.Minute, 1*time.Minute),
 		Peers:             cache.New(1*time.Minute, 1*time.Minute),
 		Nodes:             cache.New(1*time.Minute, 1*time.Minute),
+		Clients:           cache.New(1*time.Minute, 1*time.Minute),
 		GroupApprovedLogs: cache.New(2*time.Minute, 1*time.Minute),
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
+		ClientPublicKeys:  cache.New(5*time.Minute, 1*time.Minute),
 		PrivateKey:        privateKey,
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)

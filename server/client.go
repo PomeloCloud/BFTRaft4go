@@ -2,15 +2,19 @@ package server
 
 import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/client"
+	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/dgraph-io/badger"
+	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
 	"google.golang.org/grpc"
+	"strconv"
 	"sync"
 	"time"
 )
 
 type Client struct {
 	conn *grpc.ClientConn
-	rpc pb.BFTRaftClientClient
+	rpc  pb.BFTRaftClientClient
 }
 
 type ClientStore struct {
@@ -46,4 +50,30 @@ func NewClientStore() ClientStore {
 		client.conn.Close()
 	})
 	return store
+}
+
+func (s *BFTRaftServer) GetClient(clientId uint64) *spb.Client {
+	cacheKey := strconv.Itoa(int(clientId))
+	if cachedClient, found := s.Clients.Get(cacheKey); found {
+		return cachedClient.(*spb.Client)
+	}
+	dbKey := ComposeKeyPrefix(CLIENT_LIST_GROUP, CLIENT)
+	item := badger.KVItem{}
+	s.DB.Get(dbKey, &item)
+	data := ItemValue(&item)
+	if data == nil {
+		return nil
+	} else {
+		client := spb.Client{}
+		proto.Unmarshal(*data, &client)
+		s.Clients.Set(cacheKey, &client, cache.DefaultExpiration)
+		return &client
+	}
+}
+
+func CommandSignData(group uint64, node uint64, reqId uint64, result []byte) []byte {
+	groupBytes := U64Bytes(group)
+	nodeBytes := U64Bytes(node)
+	reqIdBytes := U64Bytes(reqId)
+	return append(append(append(groupBytes, nodeBytes...), reqIdBytes...), result...)
 }

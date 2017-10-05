@@ -11,11 +11,10 @@ service BFTRaftClient {
 
 message CommandResult {
     uint64 group = 1;
-    uint64 peer_id = 2;
-    uint64 node_id = 3;
-    uint64 request_id = 4;
-    bytes signature = 5;
-    bytes result = 6;
+    uint64 node_id = 2;
+    uint64 request_id = 3;
+    bytes signature = 4;
+    bytes result = 5;
 }
 
 message Nothing {}
