@@ -3,7 +3,7 @@
 // http://www.scs.stanford.edu/14au-cs244b/labs/projects/copeland_zhong.pdf
 
 syntax = "proto3";
-package bftraft;
+package server;
 
 service BFTRaft {
     rpc ExecCommand (CommandRequest) returns (CommandResponse) {}

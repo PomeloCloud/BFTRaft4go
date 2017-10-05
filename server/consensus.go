@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/patrickmn/go-cache"
 	"time"
-	pb "github.com/PomeloCloud/BFTRaft4go/proto"
+	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 )
 
 func (s *BFTRaftServer) prepareApproveChan(groupId uint64, logIndex uint64) {

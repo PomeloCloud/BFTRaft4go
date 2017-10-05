@@ -1,7 +1,7 @@
 package server
 
 import (
-	pb "github.com/PomeloCloud/BFTRaft4go/proto"
+	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/patrickmn/go-cache"
 	"google.golang.org/grpc"
 	"sync"
