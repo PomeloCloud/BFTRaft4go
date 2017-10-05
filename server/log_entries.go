@@ -69,7 +69,7 @@ func (s *BFTRaftServer) LastEntryHash(group_id uint64) []byte {
 	return hash
 }
 
-func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry pb.LogEntry) error {
+func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry *pb.LogEntry) error {
 	group_id := entry.Command.Group
 	key := append(ComposeKeyPrefix(group_id, LOG_ENTRIES), U64Bytes(entry.Index)...)
 	existed, err := s.DB.Exists(key)
@@ -82,7 +82,7 @@ func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry pb.LogEntr
 		if !bytes.Equal(hash, entry.Hash) {
 			return &LogAppendError{"Log entry hash mismatch"}
 		}
-		if data, err := proto.Marshal(&entry); err != nil {
+		if data, err := proto.Marshal(entry); err != nil {
 			s.DB.Set(key, data, 0x00)
 			return nil
 		} else {

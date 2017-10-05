@@ -32,7 +32,7 @@ type BFTRaftServer struct {
 	GroupsPeers       *cache.Cache
 	Nodes             *cache.Cache
 	GroupAppendedLogs *cache.Cache
-	GroupAppendLogRes *cache.Cache
+	GroupApprovedLogs *cache.Cache
 	NodePublicKeys    *cache.Cache
 	PrivateKey        *rsa.PrivateKey
 	Clients           ClientStore
@@ -74,9 +74,9 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				Hash:    hash,
 				Command: cmd,
 			}
-			if s.AppendEntryToLocal(group, logEntry) == nil {
+			if s.AppendEntryToLocal(group, &logEntry) == nil {
 				s.SendFollowersHeartbeat(ctx, leader_peer_id, group)
-				response.Result = *s.WaitLogAppended(group_id, index)
+				response.Result = s.WaitLogApproved(group_id, index)
 			}
 		}
 	}
@@ -188,13 +188,19 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 											approveRes.Signature,
 											ApproveAppendSignData(approveRes),
 										) == nil {
-											if
+											if approveRes.Appended {
+												s.PeerApprovedAppend(groupId, entry.Index, peer.Id, groupPeers, true)
+											}
 										}
 									}
 								}()
 							}
 						}
 					}
+					if s.WaitLogApproved(groupId, entry.Index) {
+						s.AppendEntryToLocal(group, entry)
+					}
+					// TODO: Commit log
 				}
 			}
 		} else {
@@ -263,7 +269,7 @@ func start(serverOpts Options) error {
 		GroupsPeers:       cache.New(1*time.Minute, 1*time.Minute),
 		Peers:             cache.New(1*time.Minute, 1*time.Minute),
 		Nodes:             cache.New(1*time.Minute, 1*time.Minute),
-		GroupAppendLogRes: cache.New(2*time.Minute, 1*time.Minute),
+		GroupApprovedLogs: cache.New(2*time.Minute, 1*time.Minute),
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
 		PrivateKey:        privateKey,
