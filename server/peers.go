@@ -66,9 +66,11 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 		entries = append(entries, entry)
 	}
 	// reverse so the first will be the one with least index
-	for i := 0; i < len(entries)/2; i++ {
-		j := len(entries) - i - 1
-		entries[i], entries[j] = entries[j], entries[i]
+	if len(entries) > 1 {
+		for i := 0; i < len(entries)/2; i++ {
+			j := len(entries) - i - 1
+			entries[i], entries[j] = entries[j], entries[i]
+		}
 	}
 	return entries, prevEntry
 }
@@ -79,20 +81,29 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 		return
 	}
 	if client, err := s.ClusterClients.Get(node.ServerAddr); err != nil {
-		go func() {
-			entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
-			signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)
-			client.rpc.AppendEntries(ctx, &pb.AppendEntriesRequest{
-				Group:        group.Id,
-				Term:         group.Term,
-				LeaderId:     s.Id,
-				PrevLogIndex: prevEntry.Index,
-				PrevLogTerm:  prevEntry.Term,
-				Signature:    s.Sign(signData),
-				QuorumVotes:  []*pb.RequestVoteResponse{},
-				Entries:      entries,
-			})
-		}()
+		entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
+		signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)
+		appendResult, err := client.rpc.AppendEntries(ctx, &pb.AppendEntriesRequest{
+			Group:        group.Id,
+			Term:         group.Term,
+			LeaderId:     s.Id,
+			PrevLogIndex: prevEntry.Index,
+			PrevLogTerm:  prevEntry.Term,
+			Signature:    s.Sign(signData),
+			QuorumVotes:  []*pb.RequestVoteResponse{},
+			Entries:      entries,
+		})
+		if err == nil {
+			if VerifySign(s.GetNodePublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
+				return
+			}
+			peer.MatchIndex = appendResult.Index
+			peer.NextIndex = peer.MatchIndex + 1
+			s.SavePeer(peer)
+			if appendResult.Convinced == false {
+				// TODO: Send Vote
+			}
+		}
 	}
 }
 
@@ -137,4 +148,11 @@ func (s *BFTRaftServer) GroupPeersSlice(groupId uint64) []*pb.Peer {
 		peers = append(peers, peer)
 	}
 	return peers
+}
+
+func (s *BFTRaftServer) SavePeer(peer *pb.Peer) {
+	if data, err := proto.Marshal(peer); err == nil {
+		dbKey := append(ComposeKeyPrefix(peer.Group, GROUP_PEERS), U64Bytes(peer.Id)...)
+		s.DB.Set(dbKey, data, 0x00)
+	}
 }

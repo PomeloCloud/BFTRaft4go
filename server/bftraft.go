@@ -236,12 +236,11 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						}
 					}
 				}
+				response.Successed = true
 			}
-		} else {
-			return response, nil
 		}
 	}
-	return nil, nil
+	return response, nil
 }
 
 func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntriesResponse) (*pb.ApproveAppendResponse, error) {
@@ -311,7 +310,9 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 	}
 	for peer := range host_peers {
 		if peer.Id != leader_peer_id {
-			s.SendPeerUncommittedLogEntries(ctx, group, peer)
+			go func() {
+				s.SendPeerUncommittedLogEntries(ctx, group, peer)
+			}()
 		}
 	}
 }
