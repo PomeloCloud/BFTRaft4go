@@ -25,6 +25,10 @@ func (liter *NodeIterator) Next() *pb.Node {
 	}
 }
 
+func (liter *NodeIterator) Close() {
+	liter.data.Close()
+}
+
 func (s *BFTRaftServer) NodesIterator() NodeIterator {
 	keyPrefix := ComposeKeyPrefix(NODE_LIST_GROUP, NODES_LIST)
 	iter := s.DB.NewIterator(badger.IteratorOptions{PrefetchValues: false})

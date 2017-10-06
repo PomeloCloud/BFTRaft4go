@@ -24,6 +24,7 @@ func (s *BFTRaftServer) GetGroupPeers(group uint64) []*pb.Peer {
 		peer_id := BytesU64(item_key, len(keyPrefix))
 		peers = append(peers, s.GetPeer(group, peer_id))
 	}
+	iter.Close()
 	s.GroupsPeers.Set(cacheKey, peers, cache.DefaultExpiration)
 	return peers
 }
@@ -99,11 +100,27 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 }
 
 func (s *BFTRaftServer) GroupServerPeer(groupId uint64) *pb.Peer {
-	peers := s.GetGroupPeers(groupId)
-	for _, peer := range peers {
-		if peer.Host == s.Id {
-			return peer
+	if peerId, found := s.GroupsOnboard[groupId]; found {
+		return s.GetPeer(groupId, peerId)
+	} else {
+		return nil
+	}
+}
+
+func ScanHostedGroups(kv *badger.KV, serverId uint64) map[uint64]uint64 {
+	scanKey := U64Bytes(GROUP_PEERS)
+	iter := kv.NewIterator(badger.IteratorOptions{})
+	iter.Seek(scanKey)
+	groups := map[uint64]uint64{}
+	for iter.ValidForPrefix(scanKey) {
+		item := iter.Item()
+		val := ItemValue(item)
+		peer := &pb.Peer{}
+		proto.Unmarshal(*val, peer)
+		if peer.Host == serverId {
+			groups[peer.Group] = peer.Id
 		}
 	}
-	return nil
+	iter.Close()
+	return groups
 }

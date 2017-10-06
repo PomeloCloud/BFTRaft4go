@@ -6,7 +6,12 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
 	"strconv"
+	"time"
 )
+
+type RTGroupMeta struct {
+	LeaderLastSeen time.Time
+}
 
 func (s *BFTRaftServer) GetGroup(groupId uint64) *pb.RaftGroup {
 	cacheKey := strconv.Itoa(int(groupId))

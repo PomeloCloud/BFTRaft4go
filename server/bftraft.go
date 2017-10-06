@@ -24,23 +24,25 @@ type Options struct {
 }
 
 type BFTRaftServer struct {
-	Id                uint64
-	Opts              Options
-	DB                *badger.KV
-	FuncReg           map[uint64]map[uint64]func(arg []byte) []byte
-	Peers             *cache.Cache
-	Groups            *cache.Cache
-	GroupsPeers       *cache.Cache
-	Nodes             *cache.Cache
-	Clients           *cache.Cache
-	GroupAppendedLogs *cache.Cache
-	GroupApprovedLogs *cache.Cache
-	NodePublicKeys    *cache.Cache
-	ClientPublicKeys  *cache.Cache
-	PrivateKey        *rsa.PrivateKey
-	ClusterClients    ClusterClientStore
-	ClientRPCs        ClientStore
-	lock              *sync.RWMutex
+	Id                  uint64
+	Opts                Options
+	DB                  *badger.KV
+	FuncReg             map[uint64]map[uint64]func(arg []byte) []byte
+	GroupsOnboard       map[uint64]uint64
+	Peers               *cache.Cache
+	Groups              *cache.Cache
+	GroupsPeers         *cache.Cache
+	Nodes               *cache.Cache
+	Clients             *cache.Cache
+	GroupAppendedLogs   *cache.Cache
+	GroupApprovedLogs   *cache.Cache
+	GroupLeaderLiveness *cache.Cache
+	NodePublicKeys      *cache.Cache
+	ClientPublicKeys    *cache.Cache
+	PrivateKey          *rsa.PrivateKey
+	ClusterClients      ClusterClientStore
+	ClientRPCs          ClientStore
+	lock                *sync.RWMutex
 }
 
 func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error) {
@@ -240,12 +242,12 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntriesResponse) (*pb.ApproveAppendResponse, error) {
 	groupId := req.Group
 	response := &pb.ApproveAppendResponse{
-		Group: groupId,
-		Peer: 0,
-		Index: req.Index,
-		Appended: false,
-		Delayed: false,
-		Failed: true,
+		Group:     groupId,
+		Peer:      0,
+		Index:     req.Index,
+		Appended:  false,
+		Delayed:   false,
+		Failed:    true,
 		Signature: []byte{},
 	}
 	response.Signature = s.Sign(ApproveAppendSignData(response))
@@ -330,8 +332,10 @@ func start(serverOpts Options) error {
 	if err != nil {
 		return err
 	}
+	id := HashPublicKey(PublicKeyFromPrivate(privateKey))
+	groupsOnboard := ScanHostedGroups(db, id)
 	bftRaftServer := BFTRaftServer{
-		Id:                HashPublicKey(PublicKeyFromPrivate(privateKey)),
+		Id:                id,
 		Opts:              serverOpts,
 		DB:                db,
 		ClusterClients:    NewClusterClientStore(),
@@ -345,6 +349,7 @@ func start(serverOpts Options) error {
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
 		ClientPublicKeys:  cache.New(5*time.Minute, 1*time.Minute),
+		GroupsOnboard:     groupsOnboard,
 		PrivateKey:        privateKey,
 	}
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
