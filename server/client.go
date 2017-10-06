@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"crypto/rsa"
 )
 
 type Client struct {
@@ -71,9 +72,37 @@ func (s *BFTRaftServer) GetClient(clientId uint64) *spb.Client {
 	}
 }
 
-func CommandSignData(group uint64, node uint64, reqId uint64, result []byte) []byte {
+func CommandSignData(group uint64, sender uint64, reqId uint64, data []byte) []byte {
 	groupBytes := U64Bytes(group)
-	nodeBytes := U64Bytes(node)
+	senderBytes := U64Bytes(sender)
 	reqIdBytes := U64Bytes(reqId)
-	return append(append(append(groupBytes, nodeBytes...), reqIdBytes...), result...)
+	return append(append(append(groupBytes, senderBytes...), reqIdBytes...), data...)
+}
+
+func (s *BFTRaftServer) GetClientPublicKey(clientId uint64) *rsa.PublicKey {
+	cacheKey := strconv.Itoa(int(clientId))
+	if cachedKey, found := s.ClientPublicKeys.Get(cacheKey); found {
+		return cachedKey.(*rsa.PublicKey)
+	}
+	client := s.GetClient(clientId)
+	if key, err := ParsePublicKey(client.PrivateKey); err == nil {
+		return key
+	} else {
+		return nil
+	}
+}
+
+func (s *BFTRaftServer) VerifyCommandSign (cmd *spb.CommandRequest) bool {
+	signData:= CommandSignData(
+		cmd.Group,
+		cmd.ClientId,
+		cmd.RequestId,
+		append(U64Bytes(cmd.FuncId), cmd.Arg...),
+	)
+	publicKey := s.GetClientPublicKey(cmd.ClientId)
+	if publicKey == nil {
+		return false
+	} else {
+		return VerifySign(publicKey, cmd.Signature, signData) == nil
+	}
 }

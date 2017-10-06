@@ -67,8 +67,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			if client, err := s.ClusterClients.Get(leader_node.ServerAddr); err != nil {
 				return client.rpc.ExecCommand(ctx, cmd)
 			}
-		} else { // the node is the leader to this group
-			// TODO: verify client signature
+		} else if s.VerifyCommandSign(cmd) { // the node is the leader to this group
 			response.LeaderId = leader_peer.Id
 			index := s.IncrGetGroupLogLastIndex(group_id)
 			hash, _ := LogHash(s.LastEntryHash(group_id), index)
@@ -161,11 +160,10 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				for i := nextLogIdx; i < nextLogIdx+uint64(len(req.Entries)); i++ {
 					expectedHash, _ = LogHash(expectedHash, i)
 					entry := req.Entries[i-nextLogIdx]
-					if entry.Index != i || !bytes.Equal(entry.Hash, expectedHash) {
-						// not all entries match
+					if entry.Index != i || !bytes.Equal(entry.Hash, expectedHash) || !s.VerifyCommandSign(entry.Command) {
+						// not all entries match or cannot verified
 						return response, nil
 					}
-					// TODO: verify client signature
 				}
 				response.Convinced = true
 				// here start the loop of sending approve request to all peers
