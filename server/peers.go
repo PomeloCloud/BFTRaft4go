@@ -97,9 +97,17 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 			if VerifySign(s.GetNodePublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
 				return
 			}
-			peer.MatchIndex = appendResult.Index
-			peer.NextIndex = peer.MatchIndex + 1
-			s.SavePeer(peer)
+			var lastEntry *pb.LogEntry
+			if len(entries) == 0 {
+				lastEntry = prevEntry
+			} else {
+				lastEntry = entries[len(entries) - 1]
+			}
+			if appendResult.Index <= lastEntry.Index && appendResult.Term <= lastEntry.Term {
+				peer.MatchIndex = appendResult.Index
+				peer.NextIndex = peer.MatchIndex + 1
+				s.SavePeer(peer)
+			}
 			if appendResult.Convinced == false {
 				// TODO: Send Vote
 			}
