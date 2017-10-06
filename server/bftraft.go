@@ -263,7 +263,9 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		return response, nil
 	}
 	response.Peer = thisPeer.Id
-
+	if VerifySign(s.GetNodePublicKey(peer.Host), req.Signature, req.Hash) != nil {
+		return response, nil
+	}
 	if s.GetGroupLogLastIndex(groupId) > req.Index {
 		// this node will never have a chance to provide it's vote to the log
 		// will check correctness and vote specifically for client peer without broadcasting
