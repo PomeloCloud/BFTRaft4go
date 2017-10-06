@@ -28,10 +28,9 @@ type BFTRaftServer struct {
 	Opts                Options
 	DB                  *badger.KV
 	FuncReg             map[uint64]map[uint64]func(arg []byte) []byte
-	GroupsOnboard       map[uint64]uint64
+	GroupsOnboard       map[uint64]RTGroupMeta
 	Peers               *cache.Cache
 	Groups              *cache.Cache
-	GroupsPeers         *cache.Cache
 	Nodes               *cache.Cache
 	Clients             *cache.Cache
 	GroupAppendedLogs   *cache.Cache
@@ -70,7 +69,10 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				return client.rpc.ExecCommand(ctx, cmd)
 			}
 		} else if s.VerifyCommandSign(cmd) { // the node is the leader to this group
+			groupMeta := s.GroupsOnboard[group_id]
 			response.LeaderId = leader_peer.Id
+			groupMeta.Lock.Lock()
+			defer groupMeta.Lock.Unlock()
 			index := s.IncrGetGroupLogLastIndex(group_id)
 			hash, _ := LogHash(s.LastEntryHash(group_id), index, cmd.FuncId, cmd.Arg)
 			logEntry := pb.LogEntry{
@@ -95,9 +97,10 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 
 func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	groupId := req.Group
-	group := s.GetGroup(groupId)
+	groupMeta := s.GroupsOnboard[groupId]
+	group := groupMeta.Group
 	reqLeaderId := req.LeaderId
-	leaderPeer := s.GetPeer(groupId, reqLeaderId)
+	leaderPeer := groupMeta.GroupPeers[reqLeaderId]
 	lastLogHash := s.LastEntryHash(groupId)
 	thisPeer := s.GroupServerPeer(groupId)
 	thisPeerId := uint64(0)
@@ -114,6 +117,8 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		Signature: s.Sign(lastLogHash),
 		Peer:      thisPeerId,
 	}
+	groupMeta.Lock.Lock()
+	defer groupMeta.Lock.Unlock()
 	// verify group and leader existence
 	if thisPeer == nil || group == nil || leaderPeer == nil {
 		return response, nil
@@ -182,7 +187,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				// so there is 2 way to make the append confirmation
 				//		1. through the 'ApprovedAppend' from other peers
 				//		2. through the appended 'ApproveAppendResponse' for catch up
-				groupPeers := s.GetGroupPeers(groupId)
+				groupPeers := s.GroupPeersSlice(groupId)
 				for _, entry := range req.Entries {
 					for _, peer := range groupPeers {
 						if peer.Host == s.Id {
@@ -280,7 +285,8 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		// this log entry have not yet been appended
 		// in this case, this peer will just cast client peer vote
 		// client peer should receive it's own vote from this peer by async
-		s.PeerApprovedAppend(groupId, req.Index, peerId, s.GetGroupPeers(groupId), true)
+		groupPeers := s.GroupPeersSlice(groupId)
+		s.PeerApprovedAppend(groupId, req.Index, peerId, groupPeers, true)
 		response.Delayed = true
 		response.Failed = false
 	}
@@ -298,7 +304,7 @@ func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func
 }
 
 func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_id uint64, group *pb.RaftGroup) {
-	group_peers := s.GetGroupPeers(group.Id)
+	group_peers := s.GroupsOnboard[group.Id].GroupPeers
 	host_peers := map[*pb.Peer]bool{}
 	for _, peer := range group_peers {
 		host_peers[peer] = true
@@ -341,7 +347,6 @@ func start(serverOpts Options) error {
 		ClusterClients:    NewClusterClientStore(),
 		ClientRPCs:        NewClientStore(),
 		Groups:            cache.New(1*time.Minute, 1*time.Minute),
-		GroupsPeers:       cache.New(1*time.Minute, 1*time.Minute),
 		Peers:             cache.New(1*time.Minute, 1*time.Minute),
 		Nodes:             cache.New(1*time.Minute, 1*time.Minute),
 		Clients:           cache.New(1*time.Minute, 1*time.Minute),

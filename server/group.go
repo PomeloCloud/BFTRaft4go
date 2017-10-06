@@ -6,11 +6,30 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
 	"strconv"
+	"sync"
 	"time"
 )
 
 type RTGroupMeta struct {
-	LeaderLastSeen time.Time
+	Peer       uint64
+	Leader     uint64
+	Lock       sync.RWMutex
+	GroupPeers map[uint64]*pb.Peer
+	Group      *pb.RaftGroup
+}
+
+func GetGroupFromKV(groupId uint64, KV *badger.KV) *pb.RaftGroup {
+	group := &pb.RaftGroup{}
+	keyPrefix := ComposeKeyPrefix(groupId, GROUP_META)
+	item := badger.KVItem{}
+	KV.Get(keyPrefix, &item)
+	data := ItemValue(&item)
+	if data == nil {
+		return nil
+	} else {
+		proto.Unmarshal(*data, group)
+		return group
+	}
 }
 
 func (s *BFTRaftServer) GetGroup(groupId uint64) *pb.RaftGroup {
@@ -19,17 +38,12 @@ func (s *BFTRaftServer) GetGroup(groupId uint64) *pb.RaftGroup {
 	if cacheFound {
 		return cachedGroup.(*pb.RaftGroup)
 	} else {
-		group := &pb.RaftGroup{}
-		keyPrefix := ComposeKeyPrefix(groupId, GROUP_META)
-		item := badger.KVItem{}
-		s.DB.Get(keyPrefix, &item)
-		data := ItemValue(&item)
-		if data == nil {
-			return nil
-		} else {
-			proto.Unmarshal(*data, group)
+		group := GetGroupFromKV(groupId, s.DB)
+		if group != nil {
 			s.Groups.Set(cacheKey, group, cache.DefaultExpiration)
 			return group
+		} else {
+			return nil
 		}
 	}
 }

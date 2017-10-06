@@ -7,25 +7,22 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
-	"strconv"
+	"sync"
 )
 
-func (s *BFTRaftServer) GetGroupPeers(group uint64) []*pb.Peer {
-	cacheKey := strconv.Itoa(int(group))
-	if cachedGroupPeers, cachedFound := s.GroupsPeers.Get(cacheKey); cachedFound {
-		return cachedGroupPeers.([]*pb.Peer)
-	}
-	var peers []*pb.Peer
+func GetGroupPeersFromKV(group uint64, KV *badger.KV) map[uint64]*pb.Peer {
+	var peers map[uint64]*pb.Peer
 	keyPrefix := ComposeKeyPrefix(group, GROUP_PEERS)
-	iter := s.DB.NewIterator(badger.IteratorOptions{PrefetchValues: false})
+	iter := KV.NewIterator(badger.IteratorOptions{})
 	iter.Seek(append(keyPrefix, U64Bytes(0)...)) // seek the head
 	for iter.ValidForPrefix(keyPrefix) {
-		item_key := iter.Item().Key()
-		peer_id := BytesU64(item_key, len(keyPrefix))
-		peers = append(peers, s.GetPeer(group, peer_id))
+		item := iter.Item()
+		item_data := ItemValue(item)
+		peer := pb.Peer{}
+		proto.Unmarshal(*item_data, &peer)
+		peers[peer.Id] = &peer
 	}
 	iter.Close()
-	s.GroupsPeers.Set(cacheKey, peers, cache.DefaultExpiration)
 	return peers
 }
 
@@ -100,27 +97,44 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 }
 
 func (s *BFTRaftServer) GroupServerPeer(groupId uint64) *pb.Peer {
-	if peerId, found := s.GroupsOnboard[groupId]; found {
-		return s.GetPeer(groupId, peerId)
+	if groupMeta, found := s.GroupsOnboard[groupId]; found {
+		return s.GetPeer(groupId, groupMeta.Peer)
 	} else {
 		return nil
 	}
 }
 
-func ScanHostedGroups(kv *badger.KV, serverId uint64) map[uint64]uint64 {
+func ScanHostedGroups(kv *badger.KV, serverId uint64) map[uint64]RTGroupMeta {
 	scanKey := U64Bytes(GROUP_PEERS)
 	iter := kv.NewIterator(badger.IteratorOptions{})
 	iter.Seek(scanKey)
-	groups := map[uint64]uint64{}
+	groups := map[uint64]RTGroupMeta{}
 	for iter.ValidForPrefix(scanKey) {
 		item := iter.Item()
 		val := ItemValue(item)
 		peer := &pb.Peer{}
 		proto.Unmarshal(*val, peer)
 		if peer.Host == serverId {
-			groups[peer.Group] = peer.Id
+			group := GetGroupFromKV(peer.Group, kv)
+			if group != nil {
+				groups[peer.Group] = RTGroupMeta{
+					Peer:       peer.Id,
+					Leader:     group.LeaderPeer,
+					Lock:       sync.RWMutex{},
+					GroupPeers: GetGroupPeersFromKV(peer.Group, kv),
+					Group:      group,
+				}
+			}
 		}
 	}
 	iter.Close()
 	return groups
+}
+
+func (s *BFTRaftServer) GroupPeersSlice(groupId uint64) []*pb.Peer {
+	peers := []*pb.Peer{}
+	for _, peer := range s.GroupsOnboard[groupId].GroupPeers {
+		peers = append(peers, peer)
+	}
+	return peers
 }
