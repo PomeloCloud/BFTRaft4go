@@ -45,12 +45,6 @@ type BFTRaftServer struct {
 
 func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error) {
 	group_id := cmd.Group
-	group := s.GetGroup(group_id)
-	if group == nil {
-		return nil, nil
-	}
-	leader_peer_id := group.LeaderPeer
-	leader_peer := s.GetPeer(group_id, leader_peer_id)
 	response := &pb.CommandResponse{
 		Group:     cmd.Group,
 		LeaderId:  0,
@@ -59,6 +53,12 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 		Signature: s.Sign(CommandSignData(group_id, s.Id, cmd.RequestId, []byte{})),
 		Result:    []byte{},
 	}
+	group := s.GetGroup(group_id)
+	if group == nil {
+		return response, nil
+	}
+	leader_peer_id := group.LeaderPeer
+	leader_peer := s.GetPeer(group_id, leader_peer_id)
 	if leader_peer == nil {
 		return response, nil
 	}
@@ -70,7 +70,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 		} else if s.VerifyCommandSign(cmd) { // the node is the leader to this group
 			response.LeaderId = leader_peer.Id
 			index := s.IncrGetGroupLogLastIndex(group_id)
-			hash, _ := LogHash(s.LastEntryHash(group_id), index)
+			hash, _ := LogHash(s.LastEntryHash(group_id), index, cmd.FuncId, cmd.Arg)
 			logEntry := pb.LogEntry{
 				Term:    group.Term,
 				Index:   index,
@@ -158,8 +158,9 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				// but we still need to check hash for upcoming logs
 				expectedHash := s.LastEntryHash(groupId)
 				for i := nextLogIdx; i < nextLogIdx+uint64(len(req.Entries)); i++ {
-					expectedHash, _ = LogHash(expectedHash, i)
 					entry := req.Entries[i-nextLogIdx]
+					cmd := entry.Command
+					expectedHash, _ = LogHash(expectedHash, i, cmd.FuncId, cmd.Arg)
 					if entry.Index != i || !bytes.Equal(entry.Hash, expectedHash) || !s.VerifyCommandSign(entry.Command) {
 						// not all entries match or cannot verified
 						return response, nil
@@ -198,7 +199,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 											approveRes.Signature,
 											ApproveAppendSignData(approveRes),
 										) == nil {
-											if approveRes.Appended {
+											if approveRes.Appended && !approveRes.Delayed && !approveRes.Failed {
 												s.PeerApprovedAppend(groupId, entry.Index, peer.Id, groupPeers, true)
 											}
 										}
@@ -208,6 +209,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						}
 					}
 					if s.WaitLogApproved(groupId, entry.Index) {
+						s.IncrGetGroupLogLastIndex(groupId)
 						s.AppendEntryToLocal(group, entry)
 					}
 					result := s.CommitGroupLog(groupId, entry.Command)
@@ -236,10 +238,51 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 }
 
 func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntriesResponse) (*pb.ApproveAppendResponse, error) {
-	//groupId := req.Group
-	//group := s.GetGroup(groupId)
+	groupId := req.Group
+	response := &pb.ApproveAppendResponse{
+		Group: groupId,
+		Peer: 0,
+		Index: req.Index,
+		Appended: false,
+		Delayed: false,
+		Failed: true,
+		Signature: []byte{},
+	}
+	response.Signature = s.Sign(ApproveAppendSignData(response))
+	group := s.GetGroup(groupId)
+	if group == nil {
+		return response, nil
+	}
+	peerId := req.Peer
+	peer := s.GetPeer(groupId, peerId)
+	if peer == nil {
+		return response, nil
+	}
+	thisPeer := s.GroupServerPeer(groupId)
+	if thisPeer == nil {
+		return response, nil
+	}
+	response.Peer = thisPeer.Id
 
-	return nil, nil
+	if s.GetGroupLogLastIndex(groupId) > req.Index {
+		// this node will never have a chance to provide it's vote to the log
+		// will check correctness and vote specifically for client peer without broadcasting
+		entry := s.GetLogEntry(groupId, req.Index)
+		if entry != nil && bytes.Equal(entry.Hash, req.Hash) {
+			response.Appended = true
+			response.Failed = false
+		}
+	} else {
+		// this log entry have not yet been appended
+		// in this case, this peer will just cast client peer vote
+		// client peer should receive it's own vote from this peer by async
+		s.PeerApprovedAppend(groupId, req.Index, peerId, s.GetGroupPeers(groupId), true)
+		response.Delayed = true
+		response.Failed = false
+	}
+
+	response.Signature = s.Sign(ApproveAppendSignData(response))
+	return response, nil
 }
 
 func (s *BFTRaftServer) RequestVote(context.Context, *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {

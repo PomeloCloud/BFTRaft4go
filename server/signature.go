@@ -60,7 +60,7 @@ func SHA1Hash(data []byte) ([]byte, crypto.Hash) {
 	return h.Sum(nil), hash
 }
 
-func LogHash(prevHash []byte, index uint64) ([]byte, crypto.Hash) {
-	// combine index to prevent unordered log sequences
-	return SHA1Hash(append(prevHash, U64Bytes(index)...))
+func LogHash(prevHash []byte, index uint64, funcId uint64, args []byte) ([]byte, crypto.Hash) {
+	// combine index, funcId and args to prevent unordered log sequences
+	return SHA1Hash(append(append(append(prevHash, U64Bytes(index)...), U64Bytes(funcId)...), args...))
 }

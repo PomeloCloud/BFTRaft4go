@@ -68,16 +68,21 @@ func (s *BFTRaftServer) LastEntryHash(group_id uint64) []byte {
 	return hash
 }
 
+func LogEntryKey(groupId uint64, entryIndex uint64) []byte {
+	return append(ComposeKeyPrefix(groupId, LOG_ENTRIES), U64Bytes(entryIndex)...)
+}
+
 func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry *pb.LogEntry) error {
 	group_id := entry.Command.Group
-	key := append(ComposeKeyPrefix(group_id, LOG_ENTRIES), U64Bytes(entry.Index)...)
+	key := LogEntryKey(group_id, entry.Index)
 	existed, err := s.DB.Exists(key)
 	if err != nil {
 		return err
 	} else if existed {
 		return &LogAppendError{"Entry existed"}
 	} else {
-		hash, _ := LogHash(s.LastEntryHash(group_id), entry.Index)
+		cmd := entry.Command
+		hash, _ := LogHash(s.LastEntryHash(group_id), entry.Index, cmd.FuncId, cmd.Arg)
 		if !bytes.Equal(hash, entry.Hash) {
 			return &LogAppendError{"Log entry hash mismatch"}
 		}
@@ -87,6 +92,20 @@ func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry *pb.LogEnt
 		} else {
 			return err
 		}
+	}
+}
+
+func (s *BFTRaftServer) GetLogEntry(groupId uint64, entryIndex uint64) *pb.LogEntry {
+	key := LogEntryKey(groupId, entryIndex)
+	item := badger.KVItem{}
+	s.DB.Get(key, &item)
+	data := ItemValue(&item)
+	if data == nil {
+		return nil
+	} else {
+		entry := pb.LogEntry{}
+		proto.Unmarshal(*data, &entry)
+		return &entry
 	}
 }
 
