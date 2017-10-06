@@ -358,6 +358,7 @@ func start(serverOpts Options) error {
 		GroupsOnboard:     groupsOnboard,
 		PrivateKey:        privateKey,
 	}
+	bftRaftServer.StartTimingWheel()
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
 	grpcServer.Serve(lis)
 	return nil

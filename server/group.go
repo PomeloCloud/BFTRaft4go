@@ -16,6 +16,7 @@ type RTGroupMeta struct {
 	Lock       sync.RWMutex
 	GroupPeers map[uint64]*pb.Peer
 	Group      *pb.RaftGroup
+	Timeout    time.Time
 }
 
 func GetGroupFromKV(groupId uint64, KV *badger.KV) *pb.RaftGroup {
