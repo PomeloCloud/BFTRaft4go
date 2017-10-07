@@ -91,7 +91,7 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 		appendResult, err := client.rpc.AppendEntries(ctx, &pb.AppendEntriesRequest{
 			Group:        group.Id,
 			Term:         group.Term,
-			LeaderId:     s.Id,
+			LeaderId:     peer.Id,
 			PrevLogIndex: prevEntry.Index,
 			PrevLogTerm:  prevEntry.Term,
 			Signature:    s.Sign(signData),
@@ -99,10 +99,10 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 			Entries:      entries,
 		})
 		if err == nil {
-			meta.IsNewTerm = false
 			if VerifySign(s.GetNodePublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
 				return
 			}
+			meta.IsNewTerm = false
 			var lastEntry *pb.LogEntry
 			if len(entries) == 0 {
 				lastEntry = prevEntry

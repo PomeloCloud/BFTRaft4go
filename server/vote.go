@@ -6,6 +6,7 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"sync"
 	"time"
+	"github.com/docker/docker/integration-cli/request"
 )
 
 func RequestVoteRequestSignData(req *pb.RequestVoteRequest) []byte {
@@ -92,5 +93,41 @@ func (s *BFTRaftServer) BecomeLeader(meta *RTGroupMeta) {
 	// so we just send the 'AppendEntry' request in this function
 	// we can use a dedicated rpc protocol for this, but no bother
 	meta.Role = LEADER
+	meta.Group.LeaderPeer = meta.Peer // set self to leader for next following requests
+	s.SaveGroup(meta.Group)
 	s.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
+}
+
+func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.AppendEntriesRequest) bool {
+	// first we need to verify the leader got all of the votes required
+	expectedVotes := ExpectedHonestPeers(s.GroupPeersSlice(meta.Group.Id))
+	if len(appendEntryReq.QuorumVotes) < expectedVotes {
+		return false
+	}
+	votes := map[uint64]bool{}
+	for _, vote := range appendEntryReq.QuorumVotes {
+		votePeer, foundCandidate := meta.GroupPeers[vote.Voter]
+		if !foundCandidate || vote.Term <= meta.Group.Term {
+			continue
+		}
+		// check their signatures
+		signData := RequestVoteResponseSignData(vote)
+		publicKey := s.GetNodePublicKey(votePeer.Host)
+		if VerifySign(publicKey, vote.Signature, signData) != nil  {
+			continue
+		}
+		// check their properties to avoid forging
+		if vote.Group == meta.Group.Id && vote.CandidateId == appendEntryReq.LeaderId && vote.Granted {
+			votes[votePeer.Id] = true
+		}
+	}
+	if len(votes) > expectedVotes {
+		// received enough votes, will transform to follower
+		meta.Role = FOLLOWER
+		meta.Group.LeaderPeer = appendEntryReq.LeaderId
+		s.SaveGroup(meta.Group)
+		return true
+	} else {
+		return false
+	}
 }

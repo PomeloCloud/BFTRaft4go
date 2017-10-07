@@ -51,8 +51,9 @@ message RequestVoteResponse {
     uint64 term = 2;
     uint64 log_index = 3;
     uint64 candidate_id = 5;
-    bool granted = 6;
-    bytes signature = 7;
+    uint64 voter = 6;
+    bool granted = 7;
+    bytes signature = 8;
 }
 
 message AppendEntriesRequest {
