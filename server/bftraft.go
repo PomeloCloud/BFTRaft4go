@@ -28,7 +28,7 @@ type BFTRaftServer struct {
 	Opts                Options
 	DB                  *badger.KV
 	FuncReg             map[uint64]map[uint64]func(arg []byte) []byte
-	GroupsOnboard       map[uint64]RTGroupMeta
+	GroupsOnboard       map[uint64]*RTGroupMeta
 	Peers               *cache.Cache
 	Groups              *cache.Cache
 	Nodes               *cache.Cache
@@ -124,7 +124,8 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		return response, nil
 	}
 	// check leader transfer
-	if group.LeaderPeer != reqLeaderId { // TODO: check for leader transfer
+	if (groupMeta.Role == FOLLOWER || groupMeta.Role == CANDIDATE) && len(req.QuorumVotes) > 0 {
+		// TODO: check for leader transfer
 		return response, nil
 	}
 	// check leader node exists

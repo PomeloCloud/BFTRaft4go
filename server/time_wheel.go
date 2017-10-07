@@ -6,28 +6,43 @@ import (
 	"context"
 )
 
-func RandomTimeout() int {
-	lowRange := 50
-	highRange := 500
-	return lowRange + int(float32(highRange) * rand.Float32())
+func RandomTimeout(mult float32) int {
+	lowRange := 100 * mult
+	highRange := 1000 * mult
+	return int(lowRange + highRange * rand.Float32())
+}
+
+func RefreshTimer(meta *RTGroupMeta, mult float32) {
+	meta.Timeout = time.Now().Add(time.Duration(RandomTimeout(mult)) * time.Millisecond)
 }
 
 func (s *BFTRaftServer) StartTimingWheel() {
 	go func() {
 		for true {
-			for groupId, meta := range s.GroupsOnboard {
+			for _, meta := range s.GroupsOnboard {
 				meta.Lock.Lock()
 				if meta.Timeout.After(time.Now()) {
-					if meta.Leader != meta.Peer {
+					if meta.Role == FOLLOWER {
+						if meta.Leader != meta.Peer {
+							panic("Follower is leader")
+						}
 						// not leader
 						// TODO: request votes
-						s.RequestGroupVotes(groupId)
-					} else {
+						s.BecomeCandidate(meta)
+						RefreshTimer(meta, 10)
+					} else if meta.Role == LEADER {
 						// is leader, send heartbeat
 						s.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
+						RefreshTimer(meta, 1)
+					} else if meta.Role == CANDIDATE {
+						// is candidate but vote expired, start a new vote
+						s.BecomeCandidate(meta)
+						RefreshTimer(meta, 10)
+					} else if meta.Role == OBSERVER {
+						// TODO: update local data
+						RefreshTimer(meta, 10)
 					}
 				}
-				meta.Timeout = time.Now().Add(time.Duration(RandomTimeout()) * time.Millisecond)
 				meta.Lock.Unlock()
 			}
 			time.Sleep(100 * time.Millisecond)

@@ -8,6 +8,14 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"google.golang.org/grpc/peer"
+)
+
+const (
+	LEADER    = 0
+	FOLLOWER  = 1
+	CANDIDATE = 2
+	OBSERVER  = 3
 )
 
 type RTGroupMeta struct {
@@ -17,6 +25,7 @@ type RTGroupMeta struct {
 	GroupPeers map[uint64]*pb.Peer
 	Group      *pb.RaftGroup
 	Timeout    time.Time
+	Role       int
 }
 
 func GetGroupFromKV(groupId uint64, KV *badger.KV) *pb.RaftGroup {
@@ -77,4 +86,11 @@ func (s *BFTRaftServer) IncrGetGroupLogLastIndex(groupId uint64) uint64 {
 		}
 	}
 	panic("Incr Group IDX Failed")
+}
+
+func (s *BFTRaftServer) SaveGroup(group *pb.RaftGroup) {
+	if data, err := proto.Marshal(group); err == nil {
+		dbKey := append(ComposeKeyPrefix(group.Id, GROUP_META))
+		s.DB.Set(dbKey, data, 0x00)
+	}
 }

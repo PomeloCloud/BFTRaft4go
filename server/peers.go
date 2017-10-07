@@ -123,11 +123,11 @@ func (s *BFTRaftServer) GroupServerPeer(groupId uint64) *pb.Peer {
 	}
 }
 
-func ScanHostedGroups(kv *badger.KV, serverId uint64) map[uint64]RTGroupMeta {
+func ScanHostedGroups(kv *badger.KV, serverId uint64) map[uint64]*RTGroupMeta {
 	scanKey := U64Bytes(GROUP_PEERS)
 	iter := kv.NewIterator(badger.IteratorOptions{})
 	iter.Seek(scanKey)
-	groups := map[uint64]RTGroupMeta{}
+	groups := map[uint64]*RTGroupMeta{}
 	for iter.ValidForPrefix(scanKey) {
 		item := iter.Item()
 		val := ItemValue(item)
@@ -136,7 +136,7 @@ func ScanHostedGroups(kv *badger.KV, serverId uint64) map[uint64]RTGroupMeta {
 		if peer.Host == serverId {
 			group := GetGroupFromKV(peer.Group, kv)
 			if group != nil {
-				groups[peer.Group] = RTGroupMeta{
+				groups[peer.Group] = &RTGroupMeta{
 					Peer:       peer.Id,
 					Leader:     group.LeaderPeer,
 					Lock:       sync.RWMutex{},
