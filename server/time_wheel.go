@@ -29,15 +29,12 @@ func (s *BFTRaftServer) StartTimingWheel() {
 						// not leader
 						// TODO: request votes
 						s.BecomeCandidate(meta)
-						RefreshTimer(meta, 10)
 					} else if meta.Role == LEADER {
 						// is leader, send heartbeat
 						s.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
-						RefreshTimer(meta, 1)
 					} else if meta.Role == CANDIDATE {
 						// is candidate but vote expired, start a new vote
 						s.BecomeCandidate(meta)
-						RefreshTimer(meta, 10)
 					} else if meta.Role == OBSERVER {
 						// TODO: update local data
 						RefreshTimer(meta, 10)

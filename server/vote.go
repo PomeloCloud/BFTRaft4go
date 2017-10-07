@@ -17,11 +17,14 @@ func RequestVoteResponseSignData(res *pb.RequestVoteResponse) []byte {
 }
 
 func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
+	RefreshTimer(meta, 10)
 	meta.Role = CANDIDATE
 	group := meta.Group
 	group.Term++
 	term := group.Term
 	s.SaveGroup(meta.Group)
+	meta.Votes = []*pb.RequestVoteResponse{}
+	meta.NewTerm = true
 	lastEntry := s.LastLogEntry(group.Id)
 	request := &pb.RequestVoteRequest{
 		Group:       group.Id,
@@ -34,10 +37,13 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 	request.Signature = s.Sign(RequestVoteRequestSignData(request))
 	lock := sync.Mutex{}
 	votes := 0
-	voteReceived := make(chan bool)
+	voteReceived := make(chan *pb.RequestVoteResponse)
 	adequateVotes := make(chan bool, 1)
 	for _, peer := range meta.GroupPeers {
 		nodeId := peer.Host
+		if nodeId == s.Id {
+			continue
+		}
 		node := s.GetNode(nodeId)
 		go func() {
 			if client, err := s.ClusterClients.Get(node.ServerAddr); err == nil {
@@ -47,7 +53,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 					if VerifySign(publicKey, voteResponse.Signature, signData) == nil {
 						lock.Lock()
 						votes++
-						voteReceived <- true
+						voteReceived <- voteResponse
 						lock.Unlock()
 					}
 				}
@@ -59,8 +65,9 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 		// or follow the PBFT rule by expecting n - f votes
 		// I will use the rule from Raft first
 		expectedVotes := len(meta.GroupPeers) / 2 // ExpectedHonestPeers(s.GroupPeersSlice(group.Id))
-		for _, voted := <-voteReceived; voted; {
+		for vote, voted := <-voteReceived; voted; {
 			if votes > expectedVotes {
+				meta.Votes = append(meta.Votes, vote)
 				adequateVotes <- true
 				break
 			}
@@ -80,7 +87,8 @@ func (s *BFTRaftServer) BecomeLeader(meta *RTGroupMeta) {
 	// when this peer become the leader of the group
 	// it need to send it's vote to followers to claim it's authority
 	// this only need to be done once in each term
-	// so we just send the 'AppendEntry' request with no actual entries in this function
+	// so we just send the 'AppendEntry' request in this function
 	// we can use a dedicated rpc protocol for this, but no bother
-
+	meta.Role = LEADER
+	s.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
 }

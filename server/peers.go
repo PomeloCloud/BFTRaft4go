@@ -77,10 +77,15 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 
 func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group *pb.RaftGroup, peer *pb.Peer) {
 	node := s.GetNode(peer.Host)
+	meta := s.GroupsOnboard[group.Id]
 	if node == nil {
 		return
 	}
 	if client, err := s.ClusterClients.Get(node.ServerAddr); err != nil {
+		votes := []*pb.RequestVoteResponse{}
+		if meta.IsNewTerm {
+			votes = meta.Votes
+		}
 		entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
 		signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)
 		appendResult, err := client.rpc.AppendEntries(ctx, &pb.AppendEntriesRequest{
@@ -90,10 +95,11 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 			PrevLogIndex: prevEntry.Index,
 			PrevLogTerm:  prevEntry.Term,
 			Signature:    s.Sign(signData),
-			QuorumVotes:  []*pb.RequestVoteResponse{},
+			QuorumVotes:  votes,
 			Entries:      entries,
 		})
 		if err == nil {
+			meta.IsNewTerm = false
 			if VerifySign(s.GetNodePublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
 				return
 			}
@@ -101,7 +107,7 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 			if len(entries) == 0 {
 				lastEntry = prevEntry
 			} else {
-				lastEntry = entries[len(entries) - 1]
+				lastEntry = entries[len(entries)-1]
 			}
 			if appendResult.Index <= lastEntry.Index && appendResult.Term <= lastEntry.Term {
 				peer.MatchIndex = appendResult.Index

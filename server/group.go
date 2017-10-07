@@ -5,10 +5,10 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
+	"google.golang.org/grpc/peer"
 	"strconv"
 	"sync"
 	"time"
-	"google.golang.org/grpc/peer"
 )
 
 const (
@@ -21,11 +21,14 @@ const (
 type RTGroupMeta struct {
 	Peer       uint64
 	Leader     uint64
+	VotedPeer  uint64
 	Lock       sync.RWMutex
 	GroupPeers map[uint64]*pb.Peer
 	Group      *pb.RaftGroup
 	Timeout    time.Time
 	Role       int
+	Votes      []*pb.RequestVoteResponse
+	IsNewTerm    bool
 }
 
 func GetGroupFromKV(groupId uint64, KV *badger.KV) *pb.RaftGroup {

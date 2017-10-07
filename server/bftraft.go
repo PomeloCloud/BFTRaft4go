@@ -316,6 +316,7 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 			}()
 		}
 	}
+	RefreshTimer(s.GroupsOnboard[group.Id], 1)
 }
 
 func start(serverOpts Options) error {
