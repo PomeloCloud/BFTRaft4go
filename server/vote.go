@@ -24,7 +24,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 	term := group.Term
 	s.SaveGroup(meta.Group)
 	meta.Votes = []*pb.RequestVoteResponse{}
-	meta.NewTerm = true
+	meta.IsNewTerm = true
 	lastEntry := s.LastLogEntry(group.Id)
 	request := &pb.RequestVoteRequest{
 		Group:       group.Id,

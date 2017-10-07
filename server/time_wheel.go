@@ -1,15 +1,15 @@
 package server
 
 import (
-	"time"
-	"math/rand"
 	"context"
+	"math/rand"
+	"time"
 )
 
 func RandomTimeout(mult float32) int {
 	lowRange := 100 * mult
 	highRange := 1000 * mult
-	return int(lowRange + highRange * rand.Float32())
+	return int(lowRange + highRange*rand.Float32())
 }
 
 func RefreshTimer(meta *RTGroupMeta, mult float32) {
@@ -27,7 +27,6 @@ func (s *BFTRaftServer) StartTimingWheel() {
 							panic("Follower is leader")
 						}
 						// not leader
-						// TODO: request votes
 						s.BecomeCandidate(meta)
 					} else if meta.Role == LEADER {
 						// is leader, send heartbeat

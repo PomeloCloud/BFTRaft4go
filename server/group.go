@@ -28,7 +28,7 @@ type RTGroupMeta struct {
 	Timeout    time.Time
 	Role       int
 	Votes      []*pb.RequestVoteResponse
-	IsNewTerm    bool
+	IsNewTerm  bool
 }
 
 func GetGroupFromKV(groupId uint64, KV *badger.KV) *pb.RaftGroup {
