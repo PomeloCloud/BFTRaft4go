@@ -124,9 +124,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		return response, nil
 	}
 	// check leader transfer
-	if (groupMeta.Role == FOLLOWER || groupMeta.Role == CANDIDATE) &&
-		len(req.QuorumVotes) > 0 &&
-		req.LeaderId != group.LeaderPeer {
+	if len(req.QuorumVotes) > 0 && req.LeaderId != group.LeaderPeer {
 		if groupMeta.VotedPeer == 0 {
 			if !s.BecomeFollower(groupMeta, req) {
 				return response, nil
