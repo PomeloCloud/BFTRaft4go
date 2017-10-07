@@ -51,10 +51,12 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 					publicKey := s.GetNodePublicKey(nodeId)
 					signData := RequestVoteResponseSignData(voteResponse)
 					if VerifySign(publicKey, voteResponse.Signature, signData) == nil {
-						lock.Lock()
-						votes++
-						voteReceived <- voteResponse
-						lock.Unlock()
+						if voteResponse.Granted && voteResponse.LogIndex <= lastEntry.Index {
+							lock.Lock()
+							votes++
+							voteReceived <- voteResponse
+							lock.Unlock()
+						}
 					}
 				}
 			}
