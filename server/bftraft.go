@@ -19,10 +19,8 @@ import (
 const MAX_TERM_BUMP = 10
 
 type Options struct {
-	MaxReplications  uint32
 	DBPath           string
 	Address          string
-	PrivateKey       []byte
 	ConsensusTimeout time.Duration
 }
 
@@ -38,7 +36,6 @@ type BFTRaftServer struct {
 	Clients             *cache.Cache
 	GroupAppendedLogs   *cache.Cache
 	GroupApprovedLogs   *cache.Cache
-	GroupLeaderLiveness *cache.Cache
 	NodePublicKeys      *cache.Cache
 	ClientPublicKeys    *cache.Cache
 	PrivateKey          *rsa.PrivateKey
