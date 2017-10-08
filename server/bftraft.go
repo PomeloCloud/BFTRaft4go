@@ -13,6 +13,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"github.com/golang/protobuf/proto"
 )
 
 const MAX_TERM_BUMP = 10
@@ -379,7 +380,7 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 	RefreshTimer(s.GroupsOnboard[group.Id], 1)
 }
 
-func start(serverOpts Options) error {
+func Start(serverOpts Options) error {
 	flag.Parse()
 	lis, err := net.Listen("tcp", serverOpts.Address)
 	if err != nil {
@@ -397,7 +398,7 @@ func start(serverOpts Options) error {
 	if err != nil {
 		return err
 	}
-	privateKey, err := ParsePrivateKey(config.PublicKey)
+	privateKey, err := ParsePrivateKey(config.PrivateKey)
 	if err != nil {
 		return err
 	}
@@ -424,4 +425,25 @@ func start(serverOpts Options) error {
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
 	grpcServer.Serve(lis)
 	return nil
+}
+
+func InitDatabase(dbPath string) {
+	config := pb.ServerConfig{}
+	if privateKey, _, err := GenerateKey(); err == nil {
+		config.PrivateKey = privateKey
+		dbopt := badger.DefaultOptions
+		dbopt.Dir = dbPath
+		dbopt.ValueDir = dbPath
+		db, err := badger.NewKV(&dbopt)
+		if err != nil {
+			panic(err)
+		}
+		configBytes, err := proto.Marshal(&config)
+		db.Set(ComposeKeyPrefix(CONFIG_GROUP, SERVER_CONF), configBytes, 0x00)
+		if err := db.Close(); err != nil {
+			panic(err)
+		}
+	} else {
+		println("Cannot generate private key for the server")
+	}
 }

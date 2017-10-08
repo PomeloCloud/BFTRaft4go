@@ -105,7 +105,7 @@ message RaftGroup {
 }
 
 message ServerConfig {
-    bytes public_key = 1;
+    bytes private_key = 1;
 }
 
 message ApproveAppendResponse {
