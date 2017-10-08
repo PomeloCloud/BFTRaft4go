@@ -364,6 +364,8 @@ func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequ
 }
 
 func (s *BFTRaftServer) AlphaNodes(context.Context, *pb.Nothing) (*pb.AlphaNodesResponse, error) {
+	// Outlet for alpha server memberships that contains all of the meta data on the network
+	// This API is intended to be invoked from any machine to any members in the cluster
 	nodes := []*pb.Node{}
 	peers := GetGroupPeersFromKV(ALPHA_GROUP, s.DB)
 	signData := []byte{}
@@ -373,6 +375,7 @@ func (s *BFTRaftServer) AlphaNodes(context.Context, *pb.Nothing) (*pb.AlphaNodes
 		nodeBytes, _ := proto.Marshal(node)
 		signData = append(signData, nodeBytes...)
 	}
+	// signature should be optional for clients in case of the client don't know server public keys
 	return &pb.AlphaNodesResponse{Nodes: nodes, Signature: s.Sign(signData)}, nil
 }
 
