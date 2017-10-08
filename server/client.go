@@ -47,7 +47,7 @@ func NewClientStore() ClientStore {
 		clients: cache.New(10*time.Minute, 5*time.Minute),
 	}
 	store.clients.OnEvicted(func(host string, clientI interface{}) {
-		client := clientI.(*ClusterClient)
+		client := clientI.(*Client)
 		client.conn.Close()
 	})
 	return store

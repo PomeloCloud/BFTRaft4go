@@ -409,12 +409,8 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 	RefreshTimer(s.GroupsOnboard[group.Id], 1)
 }
 
-func Start(serverOpts Options) error {
+func StartServer(serverOpts Options) error {
 	flag.Parse()
-	lis, err := net.Listen("tcp", serverOpts.Address)
-	if err != nil {
-		return err
-	}
 	dbopt := badger.DefaultOptions
 	dbopt.Dir = serverOpts.DBPath
 	dbopt.ValueDir = serverOpts.DBPath
@@ -422,7 +418,6 @@ func Start(serverOpts Options) error {
 	if err != nil {
 		return err
 	}
-	grpcServer := grpc.NewServer()
 	config, err := GetConfig(db)
 	if err != nil {
 		return err
@@ -450,9 +445,8 @@ func Start(serverOpts Options) error {
 		PrivateKey:        privateKey,
 	}
 	bftRaftServer.StartTimingWheel()
-	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
-	grpcServer.Serve(lis)
-	return nil
+	pb.RegisterBFTRaftServer(utils.GetGRPCServer(serverOpts.Address), &bftRaftServer)
+	return utils.GRPCServerListen(serverOpts.Address)
 }
 
 func InitDatabase(dbPath string) {
