@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"encoding/gob"
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
-	"github.com/PomeloCloud/BFTRaft4go/server"
 	"hash/fnv"
 )
+
+type FuncResult struct {
+	result interface{}
+	feature []byte
+}
 
 func HashData(data []byte) uint64 {
 	fnv_hasher := fnv.New64a()
@@ -24,16 +28,9 @@ func GetBytes(key interface{}) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func PickMajority(res []interface{}) interface{} {
-	valMap := map[uint64]interface{}{}
+func PickMajority(hashes []uint64) uint64 {
 	countMap := map[uint64]int{}
-	for _, i := range res {
-		ibytes, err := GetBytes(i)
-		if err != nil {
-			continue
-		}
-		hash := HashData(ibytes)
-		valMap[hash] = i
+	for _, hash := range hashes {
 		num, found := countMap[hash]
 		if found {
 			countMap[hash] = num + 1
@@ -41,25 +38,34 @@ func PickMajority(res []interface{}) interface{} {
 			countMap[hash] = 1
 		}
 	}
-	expectedConsensus := len(res) / 2
+	expectedConsensus := len(hashes) / 2
 	for hash, count := range countMap {
 		if count > expectedConsensus {
-			return valMap[hash]
+			return hash
 		}
 	}
-	return nil
+	return 0
 }
 
-func MajorityResponse(clients []*spb.BFTRaftClient, f func(client *spb.BFTRaftClient) interface{}) interface{} {
-	serverResChan := make(chan interface{})
+func MajorityResponse(clients []*spb.BFTRaftClient, f func(client *spb.BFTRaftClient) (interface{}, []byte)) interface{} {
+	serverResChan := make(chan FuncResult)
 	for _, c := range clients {
 		go func() {
-			serverResChan <- f(c)
+			res, fea  := f(c)
+			serverResChan <- FuncResult{
+				result: res,
+				feature: fea,
+			}
 		}()
 	}
-	serverRes := []interface{}{}
+	hashes := []uint64{}
+	vals := map[uint64]interface{}{}
 	for i := 0; i < len(clients); i++ {
-		serverRes = append(serverRes, <- serverResChan)
+		fr := <- serverResChan
+		hash := HashData(fr.feature)
+		hashes = append(hashes, hash)
+		vals[hash] = fr.result
 	}
-	return PickMajority(serverRes)
+	majorityHash := PickMajority(hashes)
+	return vals[majorityHash]
 }
