@@ -6,7 +6,6 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"sync"
 	"time"
-	"github.com/docker/docker/integration-cli/request"
 )
 
 func RequestVoteRequestSignData(req *pb.RequestVoteRequest) []byte {

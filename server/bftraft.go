@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+const MAX_TERM_BUMP = 10
+
 type Options struct {
 	MaxReplications  uint32
 	DBPath           string
@@ -300,8 +302,59 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 	return response, nil
 }
 
-func (s *BFTRaftServer) RequestVote(context.Context, *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
-	return nil, nil
+func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
+	// all of the leader transfer verification happens here
+	groupId := req.Group
+	meta := s.GroupsOnboard[groupId]
+	group := meta.Group
+	lastLogEntry := s.LastLogEntry(groupId)
+	vote := &pb.RequestVoteResponse{
+		Group:       groupId,
+		Term:        group.Term,
+		LogIndex:    lastLogEntry.Index,
+		CandidateId: req.CandidateId,
+		Voter:       meta.Peer,
+		Granted:     false,
+		Signature:   []byte{},
+	}
+	vote.Signature = s.Sign(RequestVoteResponseSignData(vote))
+	if group.Term >= req.Term || lastLogEntry.Index > req.LogIndex {
+		// leader does not catch up
+		return vote, nil
+	}
+	if meta.VotedPeer != 0 {
+		// already voted to other peer
+		return vote, nil
+	}
+	if req.Term-group.Term > MAX_TERM_BUMP {
+		// the candidate bump terms too fast
+		return vote, nil
+	}
+	// TODO: check if the candidate really get the logs it claimed when the voter may fallen behind
+	// Lazy voting
+	// the condition for casting lazy voting is to wait until this peer turned into candidate
+	// we also need to check it the peer candidate term is just what the request indicated
+	waitedCounts := 0
+	interval := 100
+	secsToWait := 10
+	intervalCount := secsToWait * 1000 / interval
+	for true {
+		<-time.After(time.Duration(interval) * time.Millisecond)
+		meta.Lock.Lock()
+		waitedCounts++
+		if meta.Role == CANDIDATE && vote.Term == meta.Group.Term {
+			vote.Granted = true
+			vote.Signature = s.Sign(RequestVoteResponseSignData(vote))
+			meta.VotedPeer = req.CandidateId
+			break
+		}
+		if waitedCounts >= intervalCount {
+			// timeout, will not grant
+			break
+		}
+		meta.Lock.Unlock()
+	}
+	return vote, nil
 }
 
 func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg []byte) []byte) {
