@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/rsa"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/client"
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/dgraph-io/badger"
@@ -10,7 +11,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-	"crypto/rsa"
 )
 
 type Client struct {
@@ -92,8 +92,8 @@ func (s *BFTRaftServer) GetClientPublicKey(clientId uint64) *rsa.PublicKey {
 	}
 }
 
-func (s *BFTRaftServer) VerifyCommandSign (cmd *spb.CommandRequest) bool {
-	signData:= CommandSignData(
+func (s *BFTRaftServer) VerifyCommandSign(cmd *spb.CommandRequest) bool {
+	signData := CommandSignData(
 		cmd.Group,
 		cmd.ClientId,
 		cmd.RequestId,

@@ -5,8 +5,45 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
+	"google.golang.org/grpc/peer"
 	"strconv"
+	"sync"
+	"time"
 )
+
+const (
+	LEADER    = 0
+	FOLLOWER  = 1
+	CANDIDATE = 2
+	OBSERVER  = 3
+)
+
+type RTGroupMeta struct {
+	Peer       uint64
+	Leader     uint64
+	VotedPeer  uint64
+	Lock       sync.RWMutex
+	GroupPeers map[uint64]*pb.Peer
+	Group      *pb.RaftGroup
+	Timeout    time.Time
+	Role       int
+	Votes      []*pb.RequestVoteResponse
+	IsNewTerm  bool
+}
+
+func GetGroupFromKV(groupId uint64, KV *badger.KV) *pb.RaftGroup {
+	group := &pb.RaftGroup{}
+	keyPrefix := ComposeKeyPrefix(groupId, GROUP_META)
+	item := badger.KVItem{}
+	KV.Get(keyPrefix, &item)
+	data := ItemValue(&item)
+	if data == nil {
+		return nil
+	} else {
+		proto.Unmarshal(*data, group)
+		return group
+	}
+}
 
 func (s *BFTRaftServer) GetGroup(groupId uint64) *pb.RaftGroup {
 	cacheKey := strconv.Itoa(int(groupId))
@@ -14,17 +51,12 @@ func (s *BFTRaftServer) GetGroup(groupId uint64) *pb.RaftGroup {
 	if cacheFound {
 		return cachedGroup.(*pb.RaftGroup)
 	} else {
-		group := &pb.RaftGroup{}
-		keyPrefix := ComposeKeyPrefix(groupId, GROUP_META)
-		item := badger.KVItem{}
-		s.DB.Get(keyPrefix, &item)
-		data := ItemValue(&item)
-		if data == nil {
-			return nil
-		} else {
-			proto.Unmarshal(*data, group)
+		group := GetGroupFromKV(groupId, s.DB)
+		if group != nil {
 			s.Groups.Set(cacheKey, group, cache.DefaultExpiration)
 			return group
+		} else {
+			return nil
 		}
 	}
 }
@@ -57,4 +89,11 @@ func (s *BFTRaftServer) IncrGetGroupLogLastIndex(groupId uint64) uint64 {
 		}
 	}
 	panic("Incr Group IDX Failed")
+}
+
+func (s *BFTRaftServer) SaveGroup(group *pb.RaftGroup) {
+	if data, err := proto.Marshal(group); err == nil {
+		dbKey := append(ComposeKeyPrefix(group.Id, GROUP_META))
+		s.DB.Set(dbKey, data, 0x00)
+	}
 }

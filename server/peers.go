@@ -7,24 +7,22 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
-	"strconv"
+	"sync"
 )
 
-func (s *BFTRaftServer) GetGroupPeers(group uint64) []*pb.Peer {
-	cacheKey := strconv.Itoa(int(group))
-	if cachedGroupPeers, cachedFound := s.GroupsPeers.Get(cacheKey); cachedFound {
-		return cachedGroupPeers.([]*pb.Peer)
-	}
-	var peers []*pb.Peer
+func GetGroupPeersFromKV(group uint64, KV *badger.KV) map[uint64]*pb.Peer {
+	var peers map[uint64]*pb.Peer
 	keyPrefix := ComposeKeyPrefix(group, GROUP_PEERS)
-	iter := s.DB.NewIterator(badger.IteratorOptions{PrefetchValues: false})
+	iter := KV.NewIterator(badger.IteratorOptions{})
 	iter.Seek(append(keyPrefix, U64Bytes(0)...)) // seek the head
 	for iter.ValidForPrefix(keyPrefix) {
-		item_key := iter.Item().Key()
-		peer_id := BytesU64(item_key, len(keyPrefix))
-		peers = append(peers, s.GetPeer(group, peer_id))
+		item := iter.Item()
+		item_data := ItemValue(item)
+		peer := pb.Peer{}
+		proto.Unmarshal(*item_data, &peer)
+		peers[peer.Id] = &peer
 	}
-	s.GroupsPeers.Set(cacheKey, peers, cache.DefaultExpiration)
+	iter.Close()
 	return peers
 }
 
@@ -68,42 +66,107 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 		entries = append(entries, entry)
 	}
 	// reverse so the first will be the one with least index
-	for i := 0; i < len(entries)/2; i++ {
-		j := len(entries) - i - 1
-		entries[i], entries[j] = entries[j], entries[i]
+	if len(entries) > 1 {
+		for i := 0; i < len(entries)/2; i++ {
+			j := len(entries) - i - 1
+			entries[i], entries[j] = entries[j], entries[i]
+		}
 	}
 	return entries, prevEntry
 }
 
 func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group *pb.RaftGroup, peer *pb.Peer) {
 	node := s.GetNode(peer.Host)
+	meta := s.GroupsOnboard[group.Id]
 	if node == nil {
 		return
 	}
 	if client, err := s.ClusterClients.Get(node.ServerAddr); err != nil {
-		go func() {
-			entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
-			signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)
-			client.rpc.AppendEntries(ctx, &pb.AppendEntriesRequest{
-				Group:        group.Id,
-				Term:         group.Term,
-				LeaderId:     s.Id,
-				PrevLogIndex: prevEntry.Index,
-				PrevLogTerm:  prevEntry.Term,
-				Signature:    s.Sign(signData),
-				QuorumVotes:  []*pb.RequestVoteResponse{},
-				Entries:      entries,
-			})
-		}()
+		votes := []*pb.RequestVoteResponse{}
+		if meta.IsNewTerm {
+			votes = meta.Votes
+		}
+		entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
+		signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)
+		appendResult, err := client.rpc.AppendEntries(ctx, &pb.AppendEntriesRequest{
+			Group:        group.Id,
+			Term:         group.Term,
+			LeaderId:     peer.Id,
+			PrevLogIndex: prevEntry.Index,
+			PrevLogTerm:  prevEntry.Term,
+			Signature:    s.Sign(signData),
+			QuorumVotes:  votes,
+			Entries:      entries,
+		})
+		if err == nil {
+			if VerifySign(s.GetNodePublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
+				return
+			}
+			meta.IsNewTerm = false
+			var lastEntry *pb.LogEntry
+			if len(entries) == 0 {
+				lastEntry = prevEntry
+			} else {
+				lastEntry = entries[len(entries)-1]
+			}
+			if appendResult.Index <= lastEntry.Index && appendResult.Term <= lastEntry.Term {
+				peer.MatchIndex = appendResult.Index
+				peer.NextIndex = peer.MatchIndex + 1
+				s.SavePeer(peer)
+			}
+			if appendResult.Convinced == false {
+				// TODO: Send Vote
+			}
+		}
 	}
 }
 
 func (s *BFTRaftServer) GroupServerPeer(groupId uint64) *pb.Peer {
-	peers := s.GetGroupPeers(groupId)
-	for _, peer := range peers {
-		if peer.Host == s.Id {
-			return peer
+	if groupMeta, found := s.GroupsOnboard[groupId]; found {
+		return s.GetPeer(groupId, groupMeta.Peer)
+	} else {
+		return nil
+	}
+}
+
+func ScanHostedGroups(kv *badger.KV, serverId uint64) map[uint64]*RTGroupMeta {
+	scanKey := U64Bytes(GROUP_PEERS)
+	iter := kv.NewIterator(badger.IteratorOptions{})
+	iter.Seek(scanKey)
+	groups := map[uint64]*RTGroupMeta{}
+	for iter.ValidForPrefix(scanKey) {
+		item := iter.Item()
+		val := ItemValue(item)
+		peer := &pb.Peer{}
+		proto.Unmarshal(*val, peer)
+		if peer.Host == serverId {
+			group := GetGroupFromKV(peer.Group, kv)
+			if group != nil {
+				groups[peer.Group] = &RTGroupMeta{
+					Peer:       peer.Id,
+					Leader:     group.LeaderPeer,
+					Lock:       sync.RWMutex{},
+					GroupPeers: GetGroupPeersFromKV(peer.Group, kv),
+					Group:      group,
+				}
+			}
 		}
 	}
-	return nil
+	iter.Close()
+	return groups
+}
+
+func (s *BFTRaftServer) GroupPeersSlice(groupId uint64) []*pb.Peer {
+	peers := []*pb.Peer{}
+	for _, peer := range s.GroupsOnboard[groupId].GroupPeers {
+		peers = append(peers, peer)
+	}
+	return peers
+}
+
+func (s *BFTRaftServer) SavePeer(peer *pb.Peer) {
+	if data, err := proto.Marshal(peer); err == nil {
+		dbKey := append(ComposeKeyPrefix(peer.Group, GROUP_PEERS), U64Bytes(peer.Id)...)
+		s.DB.Set(dbKey, data, 0x00)
+	}
 }

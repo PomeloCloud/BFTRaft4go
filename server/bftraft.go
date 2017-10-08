@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+const MAX_TERM_BUMP = 10
+
 type Options struct {
 	MaxReplications  uint32
 	DBPath           string
@@ -24,23 +26,24 @@ type Options struct {
 }
 
 type BFTRaftServer struct {
-	Id                uint64
-	Opts              Options
-	DB                *badger.KV
-	FuncReg           map[uint64]map[uint64]func(arg []byte) []byte
-	Peers             *cache.Cache
-	Groups            *cache.Cache
-	GroupsPeers       *cache.Cache
-	Nodes             *cache.Cache
-	Clients           *cache.Cache
-	GroupAppendedLogs *cache.Cache
-	GroupApprovedLogs *cache.Cache
-	NodePublicKeys    *cache.Cache
-	ClientPublicKeys  *cache.Cache
-	PrivateKey        *rsa.PrivateKey
-	ClusterClients    ClusterClientStore
-	ClientRPCs        ClientStore
-	lock              *sync.RWMutex
+	Id                  uint64
+	Opts                Options
+	DB                  *badger.KV
+	FuncReg             map[uint64]map[uint64]func(arg []byte) []byte
+	GroupsOnboard       map[uint64]*RTGroupMeta
+	Peers               *cache.Cache
+	Groups              *cache.Cache
+	Nodes               *cache.Cache
+	Clients             *cache.Cache
+	GroupAppendedLogs   *cache.Cache
+	GroupApprovedLogs   *cache.Cache
+	GroupLeaderLiveness *cache.Cache
+	NodePublicKeys      *cache.Cache
+	ClientPublicKeys    *cache.Cache
+	PrivateKey          *rsa.PrivateKey
+	ClusterClients      ClusterClientStore
+	ClientRPCs          ClientStore
+	lock                *sync.RWMutex
 }
 
 func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error) {
@@ -68,7 +71,10 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				return client.rpc.ExecCommand(ctx, cmd)
 			}
 		} else if s.VerifyCommandSign(cmd) { // the node is the leader to this group
+			groupMeta := s.GroupsOnboard[group_id]
 			response.LeaderId = leader_peer.Id
+			groupMeta.Lock.Lock()
+			defer groupMeta.Lock.Unlock()
 			index := s.IncrGetGroupLogLastIndex(group_id)
 			hash, _ := LogHash(s.LastEntryHash(group_id), index, cmd.FuncId, cmd.Arg)
 			logEntry := pb.LogEntry{
@@ -93,9 +99,10 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 
 func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	groupId := req.Group
-	group := s.GetGroup(groupId)
+	groupMeta := s.GroupsOnboard[groupId]
+	group := groupMeta.Group
 	reqLeaderId := req.LeaderId
-	leaderPeer := s.GetPeer(groupId, reqLeaderId)
+	leaderPeer := groupMeta.GroupPeers[reqLeaderId]
 	lastLogHash := s.LastEntryHash(groupId)
 	thisPeer := s.GroupServerPeer(groupId)
 	thisPeerId := uint64(0)
@@ -112,13 +119,21 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		Signature: s.Sign(lastLogHash),
 		Peer:      thisPeerId,
 	}
+	groupMeta.Lock.Lock()
+	defer groupMeta.Lock.Unlock()
 	// verify group and leader existence
 	if thisPeer == nil || group == nil || leaderPeer == nil {
 		return response, nil
 	}
 	// check leader transfer
-	if group.LeaderPeer != reqLeaderId { // TODO: check for leader transfer
-		return response, nil
+	if len(req.QuorumVotes) > 0 && req.LeaderId != group.LeaderPeer {
+		if groupMeta.VotedPeer == 0 {
+			if !s.BecomeFollower(groupMeta, req) {
+				return response, nil
+			}
+		} else {
+			return response, nil
+		}
 	}
 	// check leader node exists
 	leaderNode := s.GetNode(leaderPeer.Host)
@@ -180,7 +195,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				// so there is 2 way to make the append confirmation
 				//		1. through the 'ApprovedAppend' from other peers
 				//		2. through the appended 'ApproveAppendResponse' for catch up
-				groupPeers := s.GetGroupPeers(groupId)
+				groupPeers := s.GroupPeersSlice(groupId)
 				for _, entry := range req.Entries {
 					for _, peer := range groupPeers {
 						if peer.Host == s.Id {
@@ -229,23 +244,22 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						}
 					}
 				}
+				response.Successed = true
 			}
-		} else {
-			return response, nil
 		}
 	}
-	return nil, nil
+	return response, nil
 }
 
 func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntriesResponse) (*pb.ApproveAppendResponse, error) {
 	groupId := req.Group
 	response := &pb.ApproveAppendResponse{
-		Group: groupId,
-		Peer: 0,
-		Index: req.Index,
-		Appended: false,
-		Delayed: false,
-		Failed: true,
+		Group:     groupId,
+		Peer:      0,
+		Index:     req.Index,
+		Appended:  false,
+		Delayed:   false,
+		Failed:    true,
 		Signature: []byte{},
 	}
 	response.Signature = s.Sign(ApproveAppendSignData(response))
@@ -278,7 +292,8 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		// this log entry have not yet been appended
 		// in this case, this peer will just cast client peer vote
 		// client peer should receive it's own vote from this peer by async
-		s.PeerApprovedAppend(groupId, req.Index, peerId, s.GetGroupPeers(groupId), true)
+		groupPeers := s.GroupPeersSlice(groupId)
+		s.PeerApprovedAppend(groupId, req.Index, peerId, groupPeers, true)
 		response.Delayed = true
 		response.Failed = false
 	}
@@ -287,8 +302,59 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 	return response, nil
 }
 
-func (s *BFTRaftServer) RequestVote(context.Context, *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
-	return nil, nil
+func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
+	// all of the leader transfer verification happens here
+	groupId := req.Group
+	meta := s.GroupsOnboard[groupId]
+	group := meta.Group
+	lastLogEntry := s.LastLogEntry(groupId)
+	vote := &pb.RequestVoteResponse{
+		Group:       groupId,
+		Term:        group.Term,
+		LogIndex:    lastLogEntry.Index,
+		CandidateId: req.CandidateId,
+		Voter:       meta.Peer,
+		Granted:     false,
+		Signature:   []byte{},
+	}
+	vote.Signature = s.Sign(RequestVoteResponseSignData(vote))
+	if group.Term >= req.Term || lastLogEntry.Index > req.LogIndex {
+		// leader does not catch up
+		return vote, nil
+	}
+	if meta.VotedPeer != 0 {
+		// already voted to other peer
+		return vote, nil
+	}
+	if req.Term-group.Term > MAX_TERM_BUMP {
+		// the candidate bump terms too fast
+		return vote, nil
+	}
+	// TODO: check if the candidate really get the logs it claimed when the voter may fallen behind
+	// Lazy voting
+	// the condition for casting lazy voting is to wait until this peer turned into candidate
+	// we also need to check it the peer candidate term is just what the request indicated
+	waitedCounts := 0
+	interval := 100
+	secsToWait := 10
+	intervalCount := secsToWait * 1000 / interval
+	for true {
+		<-time.After(time.Duration(interval) * time.Millisecond)
+		meta.Lock.Lock()
+		waitedCounts++
+		if meta.Role == CANDIDATE && vote.Term == meta.Group.Term {
+			vote.Granted = true
+			vote.Signature = s.Sign(RequestVoteResponseSignData(vote))
+			meta.VotedPeer = req.CandidateId
+			break
+		}
+		if waitedCounts >= intervalCount {
+			// timeout, will not grant
+			break
+		}
+		meta.Lock.Unlock()
+	}
+	return vote, nil
 }
 
 func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg []byte) []byte) {
@@ -296,16 +362,19 @@ func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func
 }
 
 func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_id uint64, group *pb.RaftGroup) {
-	group_peers := s.GetGroupPeers(group.Id)
+	group_peers := s.GroupsOnboard[group.Id].GroupPeers
 	host_peers := map[*pb.Peer]bool{}
 	for _, peer := range group_peers {
 		host_peers[peer] = true
 	}
 	for peer := range host_peers {
 		if peer.Id != leader_peer_id {
-			s.SendPeerUncommittedLogEntries(ctx, group, peer)
+			go func() {
+				s.SendPeerUncommittedLogEntries(ctx, group, peer)
+			}()
 		}
 	}
+	RefreshTimer(s.GroupsOnboard[group.Id], 1)
 }
 
 func start(serverOpts Options) error {
@@ -330,14 +399,15 @@ func start(serverOpts Options) error {
 	if err != nil {
 		return err
 	}
+	id := HashPublicKey(PublicKeyFromPrivate(privateKey))
+	groupsOnboard := ScanHostedGroups(db, id)
 	bftRaftServer := BFTRaftServer{
-		Id:                HashPublicKey(PublicKeyFromPrivate(privateKey)),
+		Id:                id,
 		Opts:              serverOpts,
 		DB:                db,
 		ClusterClients:    NewClusterClientStore(),
 		ClientRPCs:        NewClientStore(),
 		Groups:            cache.New(1*time.Minute, 1*time.Minute),
-		GroupsPeers:       cache.New(1*time.Minute, 1*time.Minute),
 		Peers:             cache.New(1*time.Minute, 1*time.Minute),
 		Nodes:             cache.New(1*time.Minute, 1*time.Minute),
 		Clients:           cache.New(1*time.Minute, 1*time.Minute),
@@ -345,8 +415,10 @@ func start(serverOpts Options) error {
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
 		ClientPublicKeys:  cache.New(5*time.Minute, 1*time.Minute),
+		GroupsOnboard:     groupsOnboard,
 		PrivateKey:        privateKey,
 	}
+	bftRaftServer.StartTimingWheel()
 	pb.RegisterBFTRaftServer(grpcServer, &bftRaftServer)
 	grpcServer.Serve(lis)
 	return nil
