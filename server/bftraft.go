@@ -44,7 +44,7 @@ type BFTRaftServer struct {
 	PrivateKey        *rsa.PrivateKey
 	ClusterClients    ClusterClientStore
 	ClientRPCs        ClientStore
-	lock              *sync.RWMutex
+	lock              sync.RWMutex
 }
 
 func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error) {
@@ -363,20 +363,26 @@ func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequ
 	return vote, nil
 }
 
+func NodesSignData(nodes []*pb.Node) []byte {
+	signData := []byte{}
+	for _, node := range nodes {
+		nodeBytes, _ := proto.Marshal(node)
+		signData = append(signData, nodeBytes...)
+	}
+	return signData
+}
+
 func (s *BFTRaftServer) AlphaNodes(context.Context, *pb.Nothing) (*pb.AlphaNodesResponse, error) {
 	// Outlet for alpha server memberships that contains all of the meta data on the network
 	// This API is intended to be invoked from any machine to any members in the cluster
 	nodes := []*pb.Node{}
 	peers := GetGroupPeersFromKV(ALPHA_GROUP, s.DB)
-	signData := []byte{}
 	for _, peer := range peers {
 		node := s.GetNode(peer.Host)
 		nodes = append(nodes, node)
-		nodeBytes, _ := proto.Marshal(node)
-		signData = append(signData, nodeBytes...)
 	}
 	// signature should be optional for clients in case of the client don't know server public keys
-	return &pb.AlphaNodesResponse{Nodes: nodes, Signature: s.Sign(signData)}, nil
+	return &pb.AlphaNodesResponse{Nodes: nodes, Signature: s.Sign(NodesSignData(nodes))}, nil
 }
 
 func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest) (*pb.LogEntry, error) {
