@@ -16,7 +16,7 @@ func RequestVoteResponseSignData(res *pb.RequestVoteResponse) []byte {
 	return []byte(fmt.Sprint(res.Group, "-", res.Term, "-", res.LogIndex, "-", res.Term, "-", res.CandidateId, "-", res.Granted))
 }
 
-func ResetTerm(meta *RTGroupMeta, term uint64)  {
+func ResetTerm(meta *RTGroupMeta, term uint64) {
 	meta.Group.Term = term
 	meta.Votes = []*pb.RequestVoteResponse{}
 	meta.VotedPeer = 0
@@ -29,7 +29,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 	RefreshTimer(meta, 10)
 	meta.Role = CANDIDATE
 	group := meta.Group
-	ResetTerm(meta, group.Term + 1)
+	ResetTerm(meta, group.Term+1)
 	term := group.Term
 	s.SaveGroup(meta.Group)
 	lastEntry := s.LastLogEntry(group.Id)
@@ -73,7 +73,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 		// Here we can follow the rule of Raft by expecting majority votes
 		// or follow the PBFT rule by expecting n - f votes
 		// I will use the rule from Raft first
-		expectedVotes := len(meta.GroupPeers) / 2 // ExpectedHonestPeers(s.GroupPeersSlice(group.Id))
+		expectedVotes := len(meta.GroupPeers) / 2 // ExpectedHonestPeers(s.OnboardGroupPeersSlice(group.Id))
 		for vote, voted := <-voteReceived; voted; {
 			if votes > expectedVotes {
 				meta.Votes = append(meta.Votes, vote)
@@ -106,7 +106,7 @@ func (s *BFTRaftServer) BecomeLeader(meta *RTGroupMeta) {
 
 func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.AppendEntriesRequest) bool {
 	// first we need to verify the leader got all of the votes required
-	expectedVotes := ExpectedHonestPeers(s.GroupPeersSlice(meta.Group.Id))
+	expectedVotes := ExpectedHonestPeers(s.OnboardGroupPeersSlice(meta.Group.Id))
 	if len(appendEntryReq.QuorumVotes) < expectedVotes {
 		return false
 	}
@@ -119,7 +119,7 @@ func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.App
 		// check their signatures
 		signData := RequestVoteResponseSignData(vote)
 		publicKey := s.GetNodePublicKey(votePeer.Host)
-		if VerifySign(publicKey, vote.Signature, signData) != nil  {
+		if VerifySign(publicKey, vote.Signature, signData) != nil {
 			continue
 		}
 		// check their properties to avoid forging

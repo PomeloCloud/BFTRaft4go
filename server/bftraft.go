@@ -7,16 +7,19 @@ import (
 	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/dgraph-io/badger"
+	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
 	context "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"net"
 	"sync"
 	"time"
-	"github.com/golang/protobuf/proto"
 )
 
-const MAX_TERM_BUMP = 10
+const (
+	MAX_TERM_BUMP = 10
+	ALPHA_GROUP   = 1 // the group for recording server members, groups, peers etc
+)
 
 type Options struct {
 	DBPath           string
@@ -25,23 +28,23 @@ type Options struct {
 }
 
 type BFTRaftServer struct {
-	Id                  uint64
-	Opts                Options
-	DB                  *badger.KV
-	FuncReg             map[uint64]map[uint64]func(arg []byte) []byte
-	GroupsOnboard       map[uint64]*RTGroupMeta
-	Peers               *cache.Cache
-	Groups              *cache.Cache
-	Nodes               *cache.Cache
-	Clients             *cache.Cache
-	GroupAppendedLogs   *cache.Cache
-	GroupApprovedLogs   *cache.Cache
-	NodePublicKeys      *cache.Cache
-	ClientPublicKeys    *cache.Cache
-	PrivateKey          *rsa.PrivateKey
-	ClusterClients      ClusterClientStore
-	ClientRPCs          ClientStore
-	lock                *sync.RWMutex
+	Id                uint64
+	Opts              Options
+	DB                *badger.KV
+	FuncReg           map[uint64]map[uint64]func(arg []byte) []byte
+	GroupsOnboard     map[uint64]*RTGroupMeta
+	Peers             *cache.Cache
+	Groups            *cache.Cache
+	Nodes             *cache.Cache
+	Clients           *cache.Cache
+	GroupAppendedLogs *cache.Cache
+	GroupApprovedLogs *cache.Cache
+	NodePublicKeys    *cache.Cache
+	ClientPublicKeys  *cache.Cache
+	PrivateKey        *rsa.PrivateKey
+	ClusterClients    ClusterClientStore
+	ClientRPCs        ClientStore
+	lock              *sync.RWMutex
 }
 
 func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest) (*pb.CommandResponse, error) {
@@ -195,7 +198,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				// so there is 2 way to make the append confirmation
 				//		1. through the 'ApprovedAppend' from other peers
 				//		2. through the appended 'ApproveAppendResponse' for catch up
-				groupPeers := s.GroupPeersSlice(groupId)
+				groupPeers := s.OnboardGroupPeersSlice(groupId)
 				for _, entry := range req.Entries {
 					for _, peer := range groupPeers {
 						if peer.Host == s.Id {
@@ -263,8 +266,8 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		Signature: []byte{},
 	}
 	response.Signature = s.Sign(ApproveAppendSignData(response))
-	group := s.GetGroup(groupId)
-	if group == nil {
+	_, found := s.GroupsOnboard[groupId]
+	if !found {
 		return response, nil
 	}
 	peerId := req.Peer
@@ -292,7 +295,7 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		// this log entry have not yet been appended
 		// in this case, this peer will just cast client peer vote
 		// client peer should receive it's own vote from this peer by async
-		groupPeers := s.GroupPeersSlice(groupId)
+		groupPeers := s.OnboardGroupPeersSlice(groupId)
 		s.PeerApprovedAppend(groupId, req.Index, peerId, groupPeers, true)
 		response.Delayed = true
 		response.Failed = false
@@ -310,12 +313,15 @@ func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequ
 	lastLogEntry := s.LastLogEntry(groupId)
 	vote := &pb.RequestVoteResponse{
 		Group:       groupId,
-		Term:        group.Term,
+		Term:        group.GetTerm(),
 		LogIndex:    lastLogEntry.Index,
 		CandidateId: req.CandidateId,
 		Voter:       meta.Peer,
 		Granted:     false,
 		Signature:   []byte{},
+	}
+	if group == nil {
+		return vote, nil
 	}
 	vote.Signature = s.Sign(RequestVoteResponseSignData(vote))
 	if group.Term >= req.Term || lastLogEntry.Index > req.LogIndex {
@@ -355,6 +361,23 @@ func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequ
 		meta.Lock.Unlock()
 	}
 	return vote, nil
+}
+
+func (s *BFTRaftServer) AlphaNodes(context.Context, *pb.Nothing) (*pb.AlphaNodesResponse, error) {
+	nodes := []*pb.Node{}
+	peers := GetGroupPeersFromKV(ALPHA_GROUP, s.DB)
+	signData := []byte{}
+	for _, peer := range peers {
+		node := s.GetNode(peer.Host)
+		nodes = append(nodes, node)
+		nodeBytes, _ := proto.Marshal(node)
+		signData = append(signData, nodeBytes...)
+	}
+	return &pb.AlphaNodesResponse{Nodes: nodes, Signature: s.Sign(signData)}, nil
+}
+
+func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest) (*pb.LogEntry, error) {
+	return nil, nil
 }
 
 func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg []byte) []byte) {

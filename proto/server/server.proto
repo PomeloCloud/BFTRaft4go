@@ -10,6 +10,8 @@ service BFTRaft {
     rpc RequestVote (RequestVoteRequest) returns (RequestVoteResponse) {}
     rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesResponse) {}
     rpc ApproveAppend(AppendEntriesResponse) returns (ApproveAppendResponse) {}
+    rpc AlphaNodes(Nothing) returns (AlphaNodesResponse) {}
+    rpc PullGroupLogs(PullGroupLogsResuest) returns (LogEntry) {}
 }
 
 message CommandRequest {
@@ -93,7 +95,6 @@ message Node {
     bool online = 3;
     string server_addr = 4;
     bytes public_key = 5;
-    repeated uint64 peers = 6;
 }
 
 message RaftGroup {
@@ -122,6 +123,16 @@ message Client {
     uint64 id = 1;
     string address = 2;
     bytes privateKey = 3;
+}
+
+message AlphaNodesResponse {
+    repeated Node nodes = 1;
+    bytes signature = 5;
+}
+
+message PullGroupLogsResuest {
+    uint64 group = 1;
+    uint64 index = 2;
 }
 
 message Nothing {}

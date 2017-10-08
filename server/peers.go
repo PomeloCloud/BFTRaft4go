@@ -153,7 +153,7 @@ func ScanHostedGroups(kv *badger.KV, serverId uint64) map[uint64]*RTGroupMeta {
 	return groups
 }
 
-func (s *BFTRaftServer) GroupPeersSlice(groupId uint64) []*pb.Peer {
+func (s *BFTRaftServer) OnboardGroupPeersSlice(groupId uint64) []*pb.Peer {
 	peers := []*pb.Peer{}
 	for _, peer := range s.GroupsOnboard[groupId].GroupPeers {
 		peers = append(peers, peer)
