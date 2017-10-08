@@ -9,11 +9,12 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
-	context "golang.org/x/net/context"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"net"
 	"sync"
 	"time"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 const (
@@ -42,7 +43,6 @@ type BFTRaftServer struct {
 	NodePublicKeys    *cache.Cache
 	ClientPublicKeys  *cache.Cache
 	PrivateKey        *rsa.PrivateKey
-	ClusterClients    ClusterClientStore
 	ClientRPCs        ClientStore
 	lock              sync.RWMutex
 }
@@ -68,8 +68,8 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	}
 	if leader_node := s.GetNode(leader_peer.Host); leader_node != nil {
 		if leader_node.Id != s.Id {
-			if client, err := s.ClusterClients.Get(leader_node.ServerAddr); err != nil {
-				return client.rpc.ExecCommand(ctx, cmd)
+			if client, err := utils.GetClusterRPC(leader_node.ServerAddr); err != nil {
+				return client.ExecCommand(ctx, cmd)
 			}
 		} else if s.VerifyCommandSign(cmd) { // the node is the leader to this group
 			groupMeta := s.GroupsOnboard[group_id]
@@ -205,13 +205,13 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 							continue
 						}
 						if node := s.GetNode(peer.Host); node != nil {
-							if client, err := s.ClusterClients.Get(node.ServerAddr); err == nil {
+							if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 								response.Term = entry.Term
 								response.Index = entry.Index
 								response.Hash = entry.Hash
 								response.Signature = s.Sign(entry.Hash)
 								go func() {
-									if approveRes, err := client.rpc.ApproveAppend(ctx, response); err != nil {
+									if approveRes, err := client.ApproveAppend(ctx, response); err != nil {
 										if VerifySign(
 											s.GetNodePublicKey(node.Id),
 											approveRes.Signature,
@@ -437,7 +437,6 @@ func Start(serverOpts Options) error {
 		Id:                id,
 		Opts:              serverOpts,
 		DB:                db,
-		ClusterClients:    NewClusterClientStore(),
 		ClientRPCs:        NewClientStore(),
 		Groups:            cache.New(1*time.Minute, 1*time.Minute),
 		Peers:             cache.New(1*time.Minute, 1*time.Minute),

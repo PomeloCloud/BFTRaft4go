@@ -6,6 +6,7 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"sync"
 	"time"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 func RequestVoteRequestSignData(req *pb.RequestVoteRequest) []byte {
@@ -53,8 +54,8 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 		}
 		node := s.GetNode(nodeId)
 		go func() {
-			if client, err := s.ClusterClients.Get(node.ServerAddr); err == nil {
-				if voteResponse, err := client.rpc.RequestVote(context.Background(), request); err == nil {
+			if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
+				if voteResponse, err := client.RequestVote(context.Background(), request); err == nil {
 					publicKey := s.GetNodePublicKey(nodeId)
 					signData := RequestVoteResponseSignData(voteResponse)
 					if VerifySign(publicKey, voteResponse.Signature, signData) == nil {

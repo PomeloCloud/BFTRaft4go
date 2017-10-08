@@ -8,6 +8,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
 	"sync"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 func GetGroupPeersFromKV(group uint64, KV *badger.KV) map[uint64]*pb.Peer {
@@ -81,14 +82,14 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 	if node == nil {
 		return
 	}
-	if client, err := s.ClusterClients.Get(node.ServerAddr); err != nil {
+	if client, err := utils.GetClusterRPC(node.ServerAddr); err != nil {
 		votes := []*pb.RequestVoteResponse{}
 		if meta.VotesForEntries[meta.Peer] {
 			votes = meta.Votes
 		}
 		entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
 		signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)
-		appendResult, err := client.rpc.AppendEntries(ctx, &pb.AppendEntriesRequest{
+		appendResult, err := client.AppendEntries(ctx, &pb.AppendEntriesRequest{
 			Group:        group.Id,
 			Term:         group.Term,
 			LeaderId:     peer.Id,

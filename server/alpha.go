@@ -9,3 +9,6 @@ package server
 
 // This file contains all of the functions for cluster nodes to track changes in alpha group
 
+func (s *BFTRaftServer) AttachAlphaGroup() {
+	
+}
