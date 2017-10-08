@@ -11,5 +11,5 @@ package server
 
 func (s *BFTRaftServer) AttachAlphaGroup() {
 	// this function will either join or observe alpha group
-
+	
 }

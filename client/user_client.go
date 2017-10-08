@@ -33,19 +33,6 @@ func NewClient(bootstraps []string, opts ClientOptions) (*BFTRaftClient, error) 
 		PrivateKey: privateKey,
 		Lock:       sync.RWMutex{},
 	}
-	bootstrapServers := []spb.BFTRaftClient{}
-	for _, addr := range bootstraps {
-		if c, err := utils.GetClusterRPC(addr); err == nil {
-			bootstrapServers = append(bootstrapServers, c)
-		}
-	}
-	alphaNodes := MajorityResponse(bootstrapServers, func(c spb.BFTRaftClient) (interface{}, []byte) {
-		if nodes, err := c.AlphaNodes(context.Background(), &spb.Nothing{}); err == nil {
-			return nodes, server.NodesSignData(nodes.Nodes)
-		} else {
-			return nil, []byte{}
-		}
-	}).(*spb.AlphaNodesResponse)
-	bftclient.AlphaNodes = alphaNodes.Nodes
+	bftclient.AlphaNodes = utils.AlphaNodes(bootstraps)
 	return nil, nil
 }
