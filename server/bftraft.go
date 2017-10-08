@@ -134,7 +134,10 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		} else {
 			return response, nil
 		}
+	} else if req.LeaderId != group.LeaderPeer {
+		return response, nil
 	}
+	response.Convinced = true
 	// check leader node exists
 	leaderNode := s.GetNode(leaderPeer.Host)
 	if leaderPeer == nil {
@@ -181,7 +184,6 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						return response, nil
 					}
 				}
-				response.Convinced = true
 				// here start the loop of sending approve request to all peers
 				// the followers may have multiply uncommitted entries so we need to
 				//		approve them one by one and wait their response for confirmation.

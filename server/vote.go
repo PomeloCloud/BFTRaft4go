@@ -16,15 +16,22 @@ func RequestVoteResponseSignData(res *pb.RequestVoteResponse) []byte {
 	return []byte(fmt.Sprint(res.Group, "-", res.Term, "-", res.LogIndex, "-", res.Term, "-", res.CandidateId, "-", res.Granted))
 }
 
+func ResetTerm(meta *RTGroupMeta, term uint64)  {
+	meta.Group.Term = term
+	meta.Votes = []*pb.RequestVoteResponse{}
+	meta.VotedPeer = 0
+	for peerId := range meta.GroupPeers {
+		meta.VotesForEntries[peerId] = true
+	}
+}
+
 func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 	RefreshTimer(meta, 10)
 	meta.Role = CANDIDATE
 	group := meta.Group
-	group.Term++
+	ResetTerm(meta, group.Term + 1)
 	term := group.Term
 	s.SaveGroup(meta.Group)
-	meta.Votes = []*pb.RequestVoteResponse{}
-	meta.IsNewTerm = true
 	lastEntry := s.LastLogEntry(group.Id)
 	request := &pb.RequestVoteRequest{
 		Group:       group.Id,
@@ -124,6 +131,7 @@ func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.App
 		// received enough votes, will transform to follower
 		meta.Role = FOLLOWER
 		meta.Group.LeaderPeer = appendEntryReq.LeaderId
+		ResetTerm(meta, appendEntryReq.Term)
 		s.SaveGroup(meta.Group)
 		return true
 	} else {
