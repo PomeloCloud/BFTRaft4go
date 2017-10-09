@@ -12,10 +12,10 @@ const (
 )
 
 func (s *BFTRaftServer) RegisterMembershipCommands() {
-	s.RegisterServerFunc(ALPHA_GROUP, NODE_JOIN, s.NodeJoin)
-	s.RegisterServerFunc(ALPHA_GROUP, NEW_NODE, s.NewNode)
-	s.RegisterServerFunc(ALPHA_GROUP, NEW_CLIENT, s.NewClient)
-	s.RegisterServerFunc(ALPHA_GROUP, NODE_GROUP, s.NewGroup)
+	s.RegisterRaftFunc(ALPHA_GROUP, NODE_JOIN, s.NodeJoin)
+	s.RegisterRaftFunc(ALPHA_GROUP, NEW_NODE, s.NewNode)
+	s.RegisterRaftFunc(ALPHA_GROUP, NEW_CLIENT, s.NewClient)
+	s.RegisterRaftFunc(ALPHA_GROUP, NODE_GROUP, s.NewGroup)
 }
 
 func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {

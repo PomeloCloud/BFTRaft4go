@@ -418,7 +418,7 @@ func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest)
 	return nil, nil
 }
 
-func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg *[]byte, entry *pb.LogEntry) []byte) {
+func (s *BFTRaftServer) RegisterRaftFunc(group uint64, func_id uint64, fn func(arg *[]byte, entry *pb.LogEntry) []byte) {
 	s.FuncReg[group][func_id] = fn
 }
 
