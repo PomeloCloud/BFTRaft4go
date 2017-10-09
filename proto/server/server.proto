@@ -132,7 +132,7 @@ message GroupNodesRequest {
 
 message GroupNodesResponse {
     repeated Node nodes = 1;
-    bytes signature = 5;
+    bytes signature = 2;
 }
 
 message GroupPeersRequest {
@@ -140,8 +140,9 @@ message GroupPeersRequest {
 }
 
 message GroupPeersResponse {
-    repeated Peer peers = 1;
-    bytes signature = 5;
+    LogEntry last_log = 1;
+    repeated Peer peers = 2;
+    bytes signature = 3;
 }
 
 message PullGroupLogsResuest {

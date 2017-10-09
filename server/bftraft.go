@@ -6,6 +6,7 @@ import (
 	"flag"
 	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
@@ -14,7 +15,6 @@ import (
 	"net"
 	"sync"
 	"time"
-	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 const (
@@ -25,6 +25,7 @@ const (
 type Options struct {
 	DBPath           string
 	Address          string
+	bootstrap        []string
 	ConsensusTimeout time.Duration
 }
 
@@ -394,9 +395,17 @@ func (s *BFTRaftServer) GroupNodes(ctx context.Context, request *pb.GroupNodesRe
 	return &pb.GroupNodesResponse{Nodes: nodes, Signature: s.Sign(NodesSignData(nodes))}, nil
 }
 
-func (s *BFTRaftServer) GroupPeers(context.Context, *pb.GroupPeersRequest) (*pb.GroupPeersResponse, error) {
+func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupPeersRequest) (*pb.GroupPeersResponse, error) {
+	peersMap := GetGroupPeersFromKV(req.GroupId, s.DB)
 	peers := []*pb.Peer{}
-	return &pb.GroupPeersResponse{Peers: peers, Signature: s.Sign(PeersSignData(peers))}, nil
+	for _, p := range peersMap {
+		peers = append(peers, p)
+	}
+	return &pb.GroupPeersResponse{
+		Peers:     peers,
+		Signature: s.Sign(PeersSignData(peers)),
+		LastLog:   s.LastLogEntry(req.GroupId),
+	}, nil
 }
 
 func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest) (*pb.LogEntry, error) {
@@ -441,7 +450,6 @@ func StartServer(serverOpts Options) error {
 		return err
 	}
 	id := HashPublicKey(PublicKeyFromPrivate(privateKey))
-	groupsOnboard := ScanHostedGroups(db, id)
 	bftRaftServer := BFTRaftServer{
 		Id:                id,
 		Opts:              serverOpts,
@@ -455,9 +463,10 @@ func StartServer(serverOpts Options) error {
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
 		ClientPublicKeys:  cache.New(5*time.Minute, 1*time.Minute),
-		GroupsOnboard:     groupsOnboard,
 		PrivateKey:        privateKey,
 	}
+	bftRaftServer.SyncAlphaGroup(serverOpts.bootstrap)
+	bftRaftServer.GroupsOnboard = ScanHostedGroups(db, id)
 	bftRaftServer.StartTimingWheel()
 	pb.RegisterBFTRaftServer(utils.GetGRPCServer(serverOpts.Address), &bftRaftServer)
 	return utils.GRPCServerListen(serverOpts.Address)

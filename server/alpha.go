@@ -27,7 +27,7 @@ func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
 			alphaRPCs = append(alphaRPCs, rpc)
 		}
 	}
-	alphaPeers := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
+	alphaPeersRes := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupPeers(context.Background(), &spb.GroupPeersRequest{
 			GroupId: ALPHA_GROUP,
 		}); err == nil {
@@ -35,7 +35,9 @@ func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
 		} else {
 			return nil, []byte{}
 		}
-	}).(*spb.GroupPeersResponse).Peers
+	}).(*spb.GroupPeersResponse)
+	peers := alphaPeersRes.Peers
+	lastLog := alphaPeersRes.LastLog
 
 }
 

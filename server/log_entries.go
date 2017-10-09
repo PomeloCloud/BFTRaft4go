@@ -78,8 +78,6 @@ func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry *pb.LogEnt
 	existed, err := s.DB.Exists(key)
 	if err != nil {
 		return err
-	} else if existed {
-		return &LogAppendError{"Entry existed"}
 	} else {
 		cmd := entry.Command
 		hash, _ := LogHash(s.LastEntryHash(group_id), entry.Index, cmd.FuncId, cmd.Arg)
