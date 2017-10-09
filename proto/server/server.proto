@@ -13,7 +13,7 @@ service BFTRaft {
     rpc GroupNodes (GroupId) returns (GroupNodesResponse) {}
     rpc GroupPeers (GroupId) returns (GroupPeersResponse) {}
     rpc GetGroupContent (GroupId) returns (RaftGroup) {}
-    rpc PullGroupLogs (PullGroupLogsResuest) returns (LogEntry) {}
+    rpc PullGroupLogs (PullGroupLogsResuest) returns (LogEntries) {}
 }
 
 message CommandRequest {
@@ -145,6 +145,11 @@ message GroupPeersResponse {
 message PullGroupLogsResuest {
     uint64 group = 1;
     uint64 index = 2;
+}
+
+message LogEntries {
+    repeated LogEntry entries = 1;
+    bytes signature = 2;
 }
 
 message Nothing {}

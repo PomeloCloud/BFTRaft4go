@@ -37,6 +37,9 @@ func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
 			return nil, []byte{}
 		}
 	}).(*spb.GroupPeersResponse)
+	if alphaPeersRes == nil {
+		return
+	}
 	peers := alphaPeersRes.Peers
 	isAlphaMember := false
 	for _, p := range peers {

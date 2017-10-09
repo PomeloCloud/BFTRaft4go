@@ -414,7 +414,7 @@ func (s *BFTRaftServer) GetGroupContent(ctx context.Context, req *pb.GroupId) (*
 	return s.GetGroup(req.GroupId), nil
 }
 
-func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest) (*pb.LogEntry, error) {
+func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest) (*pb.LogEntries, error) {
 	return nil, nil
 }
 
