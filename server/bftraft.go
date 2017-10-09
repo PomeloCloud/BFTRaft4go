@@ -27,6 +27,7 @@ type Options struct {
 	Address          string
 	bootstrap        []string
 	ConsensusTimeout time.Duration
+	replications     uint32
 }
 
 type BFTRaftServer struct {
@@ -373,7 +374,7 @@ func NodesSignData(nodes []*pb.Node) []byte {
 	return signData
 }
 
-func PeersSignData(peers []*pb.Peer) []byte {
+func GetPeersSignData(peers []*pb.Peer) []byte {
 	signData := []byte{}
 	for _, peer := range peers {
 		peerBytes, _ := proto.Marshal(peer)
@@ -382,7 +383,7 @@ func PeersSignData(peers []*pb.Peer) []byte {
 	return signData
 }
 
-func (s *BFTRaftServer) GroupNodes(ctx context.Context, request *pb.GroupNodesRequest) (*pb.GroupNodesResponse, error) {
+func (s *BFTRaftServer) GroupNodes(ctx context.Context, request *pb.GroupId) (*pb.GroupNodesResponse, error) {
 	// Outlet for group server memberships that contains all of the meta data on the network
 	// This API is intended to be invoked from any machine to any members in the cluster
 	nodes := []*pb.Node{}
@@ -395,7 +396,8 @@ func (s *BFTRaftServer) GroupNodes(ctx context.Context, request *pb.GroupNodesRe
 	return &pb.GroupNodesResponse{Nodes: nodes, Signature: s.Sign(NodesSignData(nodes))}, nil
 }
 
-func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupPeersRequest) (*pb.GroupPeersResponse, error) {
+func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupId) (*pb.GroupPeersResponse, error) {
+	lastEntry := s.LastLogEntry(req.GroupId)
 	peersMap := GetGroupPeersFromKV(req.GroupId, s.DB)
 	peers := []*pb.Peer{}
 	for _, p := range peersMap {
@@ -403,9 +405,13 @@ func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupPeersReques
 	}
 	return &pb.GroupPeersResponse{
 		Peers:     peers,
-		Signature: s.Sign(PeersSignData(peers)),
-		LastLog:   s.LastLogEntry(req.GroupId),
+		Signature: s.Sign(GetPeersSignData(peers)),
+		LastEntry: lastEntry,
 	}, nil
+}
+
+func (s *BFTRaftServer) GetGroupContent(ctx context.Context, req *pb.GroupId) (*pb.RaftGroup, error) {
+	return s.GetGroup(req.GroupId), nil
 }
 
 func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest) (*pb.LogEntry, error) {
@@ -465,8 +471,8 @@ func StartServer(serverOpts Options) error {
 		ClientPublicKeys:  cache.New(5*time.Minute, 1*time.Minute),
 		PrivateKey:        privateKey,
 	}
-	bftRaftServer.SyncAlphaGroup(serverOpts.bootstrap)
 	bftRaftServer.GroupsOnboard = ScanHostedGroups(db, id)
+	bftRaftServer.SyncAlphaGroup(serverOpts.bootstrap)
 	bftRaftServer.StartTimingWheel()
 	pb.RegisterBFTRaftServer(utils.GetGRPCServer(serverOpts.Address), &bftRaftServer)
 	return utils.GRPCServerListen(serverOpts.Address)

@@ -90,6 +90,11 @@ func (s *BFTRaftServer) IncrGetGroupLogLastIndex(groupId uint64) uint64 {
 	panic("Incr Group IDX Failed")
 }
 
+func (s *BFTRaftServer)SetGroupLogLastIndex(groupId uint64, idx uint64)  {
+	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
+	s.DB.Set(key, U64Bytes(idx), 0x00)
+}
+
 func (s *BFTRaftServer) SaveGroup(group *pb.RaftGroup) {
 	if data, err := proto.Marshal(group); err == nil {
 		dbKey := append(ComposeKeyPrefix(group.Id, GROUP_META))

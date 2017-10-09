@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
-	"github.com/PomeloCloud/BFTRaft4go/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
+	"github.com/golang/protobuf/proto"
 )
 
 // Alpha group is a group specialized for tracking network members and groups
@@ -27,26 +27,55 @@ func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
 			alphaRPCs = append(alphaRPCs, rpc)
 		}
 	}
+	// get alpha peers from alpha nodes
 	alphaPeersRes := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
-		if res, err := client.GroupPeers(context.Background(), &spb.GroupPeersRequest{
+		if res, err := client.GroupPeers(context.Background(), &spb.GroupId{
 			GroupId: ALPHA_GROUP,
 		}); err == nil {
-			return res, server.PeersSignData(res.Peers)
+			return res, GetPeersSignData(res.Peers)
 		} else {
 			return nil, []byte{}
 		}
 	}).(*spb.GroupPeersResponse)
 	peers := alphaPeersRes.Peers
-	lastLog := alphaPeersRes.LastLog
-
-}
-
-func (s *BFTRaftServer) AttachAlphaGroup() {
-	// this function will either rejoin or observe alpha group
-	if _, isMember := s.GroupsOnboard[ALPHA_GROUP]; isMember {
-		// it is a member of alpha group
-		// should been updated in a short time
+	isAlphaMember := false
+	for _, p := range peers {
+		if p.Host == s.Id {
+			isAlphaMember = true
+			break
+		}
+	}
+	lastEntry := alphaPeersRes.LastEntry
+	group := s.GetGroup(ALPHA_GROUP)
+	if isAlphaMember {
+		if group == nil {
+			panic("Alpha member cannot find alpha group")
+		}
+		// Nothing should be done here, the raft algorithm should take the rest
 	} else {
+		if group == nil {
+			// alpha group cannot be found, it need to be generated
+			group = utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
+				if res, err := client.GetGroupContent(context.Background(), &spb.GroupId{ALPHA_GROUP}); err == nil {
+					if data, err2 := proto.Marshal(res); err2 == nil {
+						return res, data
+					} else {
+						return nil, []byte{}
+					}
+				} else {
+					return nil, []byte{}
+				}
+			}).(*spb.RaftGroup)
+		}
+		if group != nil {
+			group.Term = lastEntry.Term
+			s.SetGroupLogLastIndex(ALPHA_GROUP, lastEntry.Index)
+			// the index will be used to observe changes
+			s.SaveGroup(group)
+			for _, peer := range peers {
+				s.SavePeer(peer)
+			}
 
+		}
 	}
 }

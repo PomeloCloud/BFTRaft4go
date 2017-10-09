@@ -10,8 +10,9 @@ service BFTRaft {
     rpc RequestVote (RequestVoteRequest) returns (RequestVoteResponse) {}
     rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesResponse) {}
     rpc ApproveAppend (AppendEntriesResponse) returns (ApproveAppendResponse) {}
-    rpc GroupNodes (GroupNodesRequest) returns (GroupNodesResponse) {}
-    rpc GroupPeers (GroupPeersRequest) returns (GroupPeersResponse) {}
+    rpc GroupNodes (GroupId) returns (GroupNodesResponse) {}
+    rpc GroupPeers (GroupId) returns (GroupPeersResponse) {}
+    rpc GetGroupContent (GroupId) returns (RaftGroup) {}
     rpc PullGroupLogs (PullGroupLogsResuest) returns (LogEntry) {}
 }
 
@@ -126,7 +127,7 @@ message Client {
     bytes privateKey = 3;
 }
 
-message GroupNodesRequest {
+message GroupId {
     uint64 group_id = 1;
 }
 
@@ -135,12 +136,8 @@ message GroupNodesResponse {
     bytes signature = 2;
 }
 
-message GroupPeersRequest {
-    uint64 group_id = 1;
-}
-
 message GroupPeersResponse {
-    LogEntry last_log = 1;
+    LogEntry last_entry = 1;
     repeated Peer peers = 2;
     bytes signature = 3;
 }
