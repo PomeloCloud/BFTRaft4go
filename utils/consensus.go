@@ -8,7 +8,7 @@ import (
 )
 
 type FuncResult struct {
-	result interface{}
+	result  interface{}
 	feature []byte
 }
 
@@ -51,9 +51,9 @@ func MajorityResponse(clients []spb.BFTRaftClient, f func(client spb.BFTRaftClie
 	serverResChan := make(chan FuncResult)
 	for _, c := range clients {
 		go func() {
-			res, fea  := f(c)
+			res, fea := f(c)
 			serverResChan <- FuncResult{
-				result: res,
+				result:  res,
 				feature: fea,
 			}
 		}()
@@ -61,7 +61,7 @@ func MajorityResponse(clients []spb.BFTRaftClient, f func(client spb.BFTRaftClie
 	hashes := []uint64{}
 	vals := map[uint64]interface{}{}
 	for i := 0; i < len(clients); i++ {
-		fr := <- serverResChan
+		fr := <-serverResChan
 		hash := HashData(fr.feature)
 		hashes = append(hashes, hash)
 		vals[hash] = fr.result

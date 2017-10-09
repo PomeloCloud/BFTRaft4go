@@ -2,9 +2,9 @@ package utils
 
 import (
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
-	"sync"
 	"google.golang.org/grpc"
 	"net"
+	"sync"
 )
 
 var RPCServers map[string]*grpc.Server = map[string]*grpc.Server{}

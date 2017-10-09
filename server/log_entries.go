@@ -6,6 +6,7 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
+	"github.com/docker/docker/pkg/testutil/cmd"
 )
 
 type LogEntryIterator struct {
@@ -126,10 +127,10 @@ func ApproveAppendSignData(res *pb.ApproveAppendResponse) []byte {
 	return append(bs1, U64Bytes(res.Index)...)
 }
 
-func (s *BFTRaftServer) CommitGroupLog(groupId uint64, cmd *pb.CommandRequest) *[]byte {
-	funcId := cmd.FuncId
+func (s *BFTRaftServer) CommitGroupLog(groupId uint64, entry *pb.LogEntry) *[]byte {
+	funcId := entry.Command.FuncId
 	fun := s.FuncReg[groupId][funcId]
-	input := cmd.Arg
-	result := fun(input)
+	input := entry.Command.Arg
+	result := fun(&input, entry)
 	return &result
 }

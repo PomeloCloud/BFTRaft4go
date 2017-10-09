@@ -34,7 +34,7 @@ type BFTRaftServer struct {
 	Id                uint64
 	Opts              Options
 	DB                *badger.KV
-	FuncReg           map[uint64]map[uint64]func(arg []byte) []byte
+	FuncReg           map[uint64]map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte
 	GroupsOnboard     map[uint64]*RTGroupMeta
 	Peers             *cache.Cache
 	Groups            *cache.Cache
@@ -89,7 +89,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			if s.AppendEntryToLocal(group, &logEntry) == nil {
 				s.SendFollowersHeartbeat(ctx, leader_peer_id, group)
 				if s.WaitLogApproved(group_id, index) {
-					response.Result = *s.CommitGroupLog(group_id, cmd)
+					response.Result = *s.CommitGroupLog(group_id, &logEntry)
 				}
 			}
 		}
@@ -232,7 +232,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						s.IncrGetGroupLogLastIndex(groupId)
 						s.AppendEntryToLocal(group, entry)
 					}
-					result := s.CommitGroupLog(groupId, entry.Command)
+					result := s.CommitGroupLog(groupId, entry)
 					client := s.GetClient(entry.Command.ClientId)
 					if client != nil {
 						if rpc, err := s.ClientRPCs.Get(client.Address); err == nil {
@@ -418,7 +418,7 @@ func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest)
 	return nil, nil
 }
 
-func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg []byte) []byte) {
+func (s *BFTRaftServer) RegisterServerFunc(group uint64, func_id uint64, fn func(arg *[]byte, entry *pb.LogEntry) []byte) {
 	s.FuncReg[group][func_id] = fn
 }
 

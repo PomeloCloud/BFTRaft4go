@@ -5,8 +5,8 @@ import (
 	"crypto/rsa"
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/server"
-	"sync"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
+	"sync"
 )
 
 type BFTRaftClient struct {
