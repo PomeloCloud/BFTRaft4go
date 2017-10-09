@@ -372,17 +372,31 @@ func NodesSignData(nodes []*pb.Node) []byte {
 	return signData
 }
 
-func (s *BFTRaftServer) AlphaNodes(context.Context, *pb.Nothing) (*pb.AlphaNodesResponse, error) {
-	// Outlet for alpha server memberships that contains all of the meta data on the network
+func PeersSignData(peers []*pb.Peer) []byte {
+	signData := []byte{}
+	for _, peer := range peers {
+		peerBytes, _ := proto.Marshal(peer)
+		signData = append(signData, peerBytes...)
+	}
+	return signData
+}
+
+func (s *BFTRaftServer) GroupNodes(ctx context.Context, request *pb.GroupNodesRequest) (*pb.GroupNodesResponse, error) {
+	// Outlet for group server memberships that contains all of the meta data on the network
 	// This API is intended to be invoked from any machine to any members in the cluster
 	nodes := []*pb.Node{}
-	peers := GetGroupPeersFromKV(ALPHA_GROUP, s.DB)
+	peers := GetGroupPeersFromKV(request.GroupId, s.DB)
 	for _, peer := range peers {
 		node := s.GetNode(peer.Host)
 		nodes = append(nodes, node)
 	}
 	// signature should be optional for clients in case of the client don't know server public keys
-	return &pb.AlphaNodesResponse{Nodes: nodes, Signature: s.Sign(NodesSignData(nodes))}, nil
+	return &pb.GroupNodesResponse{Nodes: nodes, Signature: s.Sign(NodesSignData(nodes))}, nil
+}
+
+func (s *BFTRaftServer) GroupPeers(context.Context, *pb.GroupPeersRequest) (*pb.GroupPeersResponse, error) {
+	peers := []*pb.Peer{}
+	return &pb.GroupPeersResponse{Peers: peers, Signature: s.Sign(PeersSignData(peers))}, nil
 }
 
 func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest) (*pb.LogEntry, error) {

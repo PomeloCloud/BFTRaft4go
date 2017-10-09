@@ -9,9 +9,10 @@ service BFTRaft {
     rpc ExecCommand (CommandRequest) returns (CommandResponse) {}
     rpc RequestVote (RequestVoteRequest) returns (RequestVoteResponse) {}
     rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesResponse) {}
-    rpc ApproveAppend(AppendEntriesResponse) returns (ApproveAppendResponse) {}
-    rpc AlphaNodes(Nothing) returns (AlphaNodesResponse) {}
-    rpc PullGroupLogs(PullGroupLogsResuest) returns (LogEntry) {}
+    rpc ApproveAppend (AppendEntriesResponse) returns (ApproveAppendResponse) {}
+    rpc GroupNodes (GroupNodesRequest) returns (GroupNodesResponse) {}
+    rpc GroupPeers (GroupPeersRequest) returns (GroupPeersResponse) {}
+    rpc PullGroupLogs (PullGroupLogsResuest) returns (LogEntry) {}
 }
 
 message CommandRequest {
@@ -125,8 +126,21 @@ message Client {
     bytes privateKey = 3;
 }
 
-message AlphaNodesResponse {
+message GroupNodesRequest {
+    uint64 group_id = 1;
+}
+
+message GroupNodesResponse {
     repeated Node nodes = 1;
+    bytes signature = 5;
+}
+
+message GroupPeersRequest {
+    uint64 group_id = 1;
+}
+
+message GroupPeersResponse {
+    repeated Peer peers = 1;
     bytes signature = 5;
 }
 
