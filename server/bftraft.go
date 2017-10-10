@@ -11,8 +11,6 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-	"net"
 	"sync"
 	"time"
 )
@@ -414,7 +412,13 @@ func (s *BFTRaftServer) GetGroupContent(ctx context.Context, req *pb.GroupId) (*
 	return s.GetGroup(req.GroupId), nil
 }
 
-func (s *BFTRaftServer) PullGroupLogs(context.Context, *pb.PullGroupLogsResuest) (*pb.LogEntries, error) {
+func (s *BFTRaftServer) PullGroupLogs(ctx context.Context, req *pb.PullGroupLogsResuest) (*pb.LogEntries, error) {
+	keyPrefix := ComposeKeyPrefix(req.Group, LOG_ENTRIES)
+	iter := s.DB.NewIterator(badger.IteratorOptions{})
+	iter.Seek(append(keyPrefix, U64Bytes(uint64(req.Index))...))
+	for true {
+
+	}
 	return nil, nil
 }
 

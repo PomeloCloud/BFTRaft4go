@@ -6,7 +6,6 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
-	"github.com/docker/docker/pkg/testutil/cmd"
 )
 
 type LogEntryIterator struct {
@@ -22,16 +21,20 @@ func (e *LogAppendError) Error() string {
 	return fmt.Sprintf("%s", e.msg)
 }
 
+func LogEntryFromKVItem(item *badger.KVItem) *pb.LogEntry {
+	entry := pb.LogEntry{}
+	itemData := ItemValue(item)
+	if itemData == nil {
+		return nil
+	}
+	proto.Unmarshal(*itemData, &entry)
+	return &entry
+}
+
 func (liter *LogEntryIterator) Next() *pb.LogEntry {
 	liter.data.Next()
 	if liter.data.ValidForPrefix(liter.prefix) {
-		entry := pb.LogEntry{}
-		itemData := ItemValue(liter.data.Item())
-		if itemData == nil {
-			return nil
-		}
-		proto.Unmarshal(*itemData, &entry)
-		return &entry
+		return LogEntryFromKVItem(liter.data.Item())
 	} else {
 		return nil
 	}
@@ -100,14 +103,7 @@ func (s *BFTRaftServer) GetLogEntry(groupId uint64, entryIndex uint64) *pb.LogEn
 	key := LogEntryKey(groupId, entryIndex)
 	item := badger.KVItem{}
 	s.DB.Get(key, &item)
-	data := ItemValue(&item)
-	if data == nil {
-		return nil
-	} else {
-		entry := pb.LogEntry{}
-		proto.Unmarshal(*data, &entry)
-		return &entry
-	}
+	return LogEntryFromKVItem(&item)
 }
 
 func AppendLogEntrySignData(groupId uint64, term uint64, prevIndex uint64, prevTerm uint64) []byte {
