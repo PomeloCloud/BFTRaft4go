@@ -35,11 +35,15 @@ func PublicKeyFromPrivate(key *rsa.PrivateKey) *rsa.PublicKey {
 	return &key.PublicKey
 }
 
-func HashPublicKey(key *rsa.PublicKey) uint64 {
+func HashPublicKeyBytes(keyData []byte) uint64 {
 	fnv_hasher := fnv.New64a()
-	keyData, _ := x509.MarshalPKIXPublicKey(key)
 	fnv_hasher.Write(keyData)
 	return fnv_hasher.Sum64()
+}
+
+func HashPublicKey(key *rsa.PublicKey) uint64 {
+	keyData, _ := x509.MarshalPKIXPublicKey(key)
+	return HashPublicKeyBytes(keyData)
 }
 
 func (s *BFTRaftServer) Sign(data []byte) []byte {

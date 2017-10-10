@@ -7,6 +7,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
 	"strconv"
+	"google.golang.org/grpc/peer"
 )
 
 type NodeIterator struct {
@@ -68,5 +69,12 @@ func (s *BFTRaftServer) GetNodePublicKey(nodeId uint64) *rsa.PublicKey {
 		return key
 	} else {
 		return nil
+	}
+}
+
+func (s *BFTRaftServer) SaveNode(node *pb.Node) {
+	if data, err := proto.Marshal(node); err == nil {
+		dbKey := append(ComposeKeyPrefix(NODE_LIST_GROUP, NODES_LIST), U64Bytes(node.Id)...)
+		s.DB.Set(dbKey, data, 0x00)
 	}
 }
