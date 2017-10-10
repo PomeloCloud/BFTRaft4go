@@ -38,7 +38,7 @@ func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 	for _, entry := range entries {
 		if err := s.AppendEntryToLocal(meta.Group, entry); err == nil {
 			s.IncrGetGroupLogLastIndex(groupId)
-			s.CommitGroupLog(groupId, entry.Command)
+			s.CommitGroupLog(groupId, entry)
 		} else {
 			panic(err)
 		}

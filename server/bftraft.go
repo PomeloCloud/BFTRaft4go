@@ -11,6 +11,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/net/context"
+	"log"
 	"sync"
 	"time"
 )
@@ -412,14 +413,32 @@ func (s *BFTRaftServer) GetGroupContent(ctx context.Context, req *pb.GroupId) (*
 	return s.GetGroup(req.GroupId), nil
 }
 
+
+// TODO: Signature
 func (s *BFTRaftServer) PullGroupLogs(ctx context.Context, req *pb.PullGroupLogsResuest) (*pb.LogEntries, error) {
 	keyPrefix := ComposeKeyPrefix(req.Group, LOG_ENTRIES)
 	iter := s.DB.NewIterator(badger.IteratorOptions{})
 	iter.Seek(append(keyPrefix, U64Bytes(uint64(req.Index))...))
-	for true {
-
+	result := []*pb.LogEntry{}
+	if iter.ValidForPrefix(keyPrefix) {
+		firstEntry := LogEntryFromKVItem(iter.Item())
+		if firstEntry.Index == req.Index {
+			for true {
+				iter.Next()
+				if iter.ValidForPrefix(keyPrefix) {
+					entry := LogEntryFromKVItem(iter.Item())
+					result = append(result, entry)
+				} else {
+					break
+				}
+			}
+		} else {
+			log.Println("First entry not match")
+		}
+	} else {
+		log.Println("Requesting non existed")
 	}
-	return nil, nil
+	return &pb.LogEntries{Entries: result}, nil
 }
 
 func (s *BFTRaftServer) RegisterRaftFunc(group uint64, func_id uint64, fn func(arg *[]byte, entry *pb.LogEntry) []byte) {
