@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/binary"
 	"github.com/dgraph-io/badger"
+	"log"
 )
 
 const (
@@ -46,17 +47,14 @@ func ComposeKeyPrefix(group uint64, t uint32) []byte {
 	return append(U32Bytes(t), U64Bytes(group)...)
 }
 
-func ItemValue(item *badger.KVItem) *[]byte {
-	var val *[]byte
-	item.Value(func(bytes []byte) error {
-		if bytes != nil {
-			lval := make([]byte, len(bytes))
-			copy(lval, bytes)
-			val = &lval
-		} else {
-			val = nil
-		}
+func ItemValue(item *badger.Item) *[]byte {
+	if item == nil {
 		return nil
-	})
-	return val
+	}
+	if val, err := item.Value(); err == nil {
+		return &val
+	} else {
+		log.Println(err)
+		return nil
+	}
 }

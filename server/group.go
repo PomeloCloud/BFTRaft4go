@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"log"
 )
 
 const (
@@ -30,27 +31,30 @@ type RTGroupMeta struct {
 	VotesForEntries map[uint64]bool // key is peer id
 }
 
-func GetGroupFromKV(groupId uint64, KV *badger.KV) *pb.RaftGroup {
+func GetGroupFromKV(txn *badger.Txn, groupId uint64) *pb.RaftGroup {
 	group := &pb.RaftGroup{}
 	keyPrefix := ComposeKeyPrefix(groupId, GROUP_META)
-	item := badger.KVItem{}
-	KV.Get(keyPrefix, &item)
-	data := ItemValue(&item)
-	if data == nil {
-		return nil
+	if item, err := txn.Get(keyPrefix); err != nil {
+		data := ItemValue(item)
+		if data == nil {
+			return nil
+		} else {
+			proto.Unmarshal(*data, group)
+			return group
+		}
 	} else {
-		proto.Unmarshal(*data, group)
-		return group
+		log.Println(err)
+		return nil
 	}
 }
 
-func (s *BFTRaftServer) GetGroup(groupId uint64) *pb.RaftGroup {
+func (s *BFTRaftServer) GetGroup(txn *badger.Txn, groupId uint64) *pb.RaftGroup {
 	cacheKey := strconv.Itoa(int(groupId))
 	cachedGroup, cacheFound := s.Groups.Get(cacheKey)
 	if cacheFound {
 		return cachedGroup.(*pb.RaftGroup)
 	} else {
-		group := GetGroupFromKV(groupId, s.DB)
+		group := GetGroupFromKV(txn, groupId)
 		if group != nil {
 			s.Groups.Set(cacheKey, group, cache.DefaultExpiration)
 			return group
@@ -60,44 +64,73 @@ func (s *BFTRaftServer) GetGroup(groupId uint64) *pb.RaftGroup {
 	}
 }
 
-func (s *BFTRaftServer) GetGroupLogLastIndex(groupId uint64) uint64 {
-	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
-	item := badger.KVItem{}
-	s.DB.Get(key, &item)
-	data := ItemValue(&item)
-	var idx uint64 = 0
-	if data != nil {
-		idx = BytesU64(*data, 0)
-	}
-	return idx
+func (s *BFTRaftServer) GetGroupNTXN(groupId uint64) *pb.RaftGroup {
+	group := &pb.RaftGroup{}
+	s.DB.View(func(txn *badger.Txn) error {
+		group = s.GetGroup(txn, groupId)
+		return nil
+	})
+	return group
 }
 
-func (s *BFTRaftServer) IncrGetGroupLogLastIndex(groupId uint64) uint64 {
+func (s *BFTRaftServer) GetGroupLogLastIndex(txn *badger.Txn, groupId uint64) uint64 {
 	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
-	for true {
-		item := badger.KVItem{}
-		s.DB.Get(key, &item)
-		data := ItemValue(&item)
+	if item, err := txn.Get(key); err == nil {
+		data := ItemValue(item)
+		var idx uint64 = 0
+		if data != nil {
+			idx = BytesU64(*data, 0)
+		}
+		return idx
+	} else {
+		log.Println(err)
+		return 0
+	}
+}
+
+func (s *BFTRaftServer) GetGroupLogLastIndexNTXN(groupId uint64) uint64 {
+	var index uint64 = 0
+	s.DB.View(func(txn *badger.Txn) error {
+		index = s.GetGroupLogLastIndex(txn,  groupId)
+		return nil
+	})
+	return index
+}
+
+func (s *BFTRaftServer) IncrGetGroupLogLastIndex(txn *badger.Txn, groupId uint64) uint64 {
+	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
+	if item, err := txn.Get(key); err == nil {
+		data := ItemValue(item)
 		var idx uint64 = 0
 		if data != nil {
 			idx = BytesU64(*data, 0)
 		}
 		idx += 1
-		if s.DB.CompareAndSet(key, U64Bytes(idx), item.Counter()) == nil {
+		if txn.Set(key, U64Bytes(idx), 0x00) == nil {
 			return idx
 		}
+	} else {
+		log.Println(err)
 	}
-	panic("Incr Group IDX Failed")
+	return  0
 }
 
-func (s *BFTRaftServer)SetGroupLogLastIndex(groupId uint64, idx uint64)  {
+func (s *BFTRaftServer)SetGroupLogLastIndex(txn *badger.Txn, groupId uint64, idx uint64) error  {
 	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
-	s.DB.Set(key, U64Bytes(idx), 0x00)
+	return txn.Set(key, U64Bytes(idx), 0x00)
 }
 
-func (s *BFTRaftServer) SaveGroup(group *pb.RaftGroup) {
+func (s *BFTRaftServer) SaveGroup(txn *badger.Txn, group *pb.RaftGroup) error {
 	if data, err := proto.Marshal(group); err == nil {
 		dbKey := append(ComposeKeyPrefix(group.Id, GROUP_META))
-		s.DB.Set(dbKey, data, 0x00)
+		return txn.Set(dbKey, data, 0x00)
+	} else {
+		return err
 	}
+}
+
+func (s *BFTRaftServer) SaveGroupNTXN(group *pb.RaftGroup) error {
+	return s.DB.Update(func(txn *badger.Txn) error {
+		return s.SaveGroup(txn, group)
+	})
 }

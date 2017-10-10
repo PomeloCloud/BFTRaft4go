@@ -7,7 +7,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
 	"strconv"
-	"google.golang.org/grpc/peer"
+	"log"
 )
 
 type NodeIterator struct {
@@ -16,46 +16,33 @@ type NodeIterator struct {
 	server *BFTRaftServer
 }
 
-func (liter *NodeIterator) Next() *pb.Node {
-	liter.data.Next()
-	if liter.data.ValidForPrefix(liter.prefix) {
-		nodeId := BytesU64(liter.data.Item().Key(), len(liter.prefix))
-		return liter.server.GetNode(nodeId)
-	} else {
-		return nil
-	}
-}
-
-func (liter *NodeIterator) Close() {
-	liter.data.Close()
-}
-
-func (s *BFTRaftServer) NodesIterator() NodeIterator {
-	keyPrefix := ComposeKeyPrefix(NODE_LIST_GROUP, NODES_LIST)
-	iter := s.DB.NewIterator(badger.IteratorOptions{PrefetchValues: false})
-	iter.Seek(append(keyPrefix, U64Bytes(0)...))
-	return NodeIterator{
-		prefix: keyPrefix,
-		data:   iter,
-		server: s,
-	}
-}
-
-func (s *BFTRaftServer) GetNode(nodeId uint64) *pb.Node {
+func (s *BFTRaftServer) GetNode(txn *badger.Txn, nodeId uint64) *pb.Node {
 	cacheKey := strconv.Itoa(int(nodeId))
 	if cacheNode, cachedFound := s.Nodes.Get(cacheKey); cachedFound {
 		return cacheNode.(*pb.Node)
 	}
-	item := badger.KVItem{}
-	s.DB.Get(append(ComposeKeyPrefix(NODE_LIST_GROUP, NODES_LIST), U64Bytes(nodeId)...), &item)
-	data := ItemValue(&item)
-	if data == nil {
+	if item, err := txn.Get(append(ComposeKeyPrefix(NODE_LIST_GROUP, NODES_LIST), U64Bytes(nodeId)...)); err == nil {
+		data := ItemValue(item)
+		if data == nil {
+			return nil
+		}
+		node := pb.Node{}
+		proto.Unmarshal(*data, &node)
+		s.Nodes.Set(cacheKey, &node, cache.DefaultExpiration)
+		return &node
+	} else {
+		log.Println(err)
 		return nil
 	}
-	node := pb.Node{}
-	proto.Unmarshal(*data, &node)
-	s.Nodes.Set(cacheKey, &node, cache.DefaultExpiration)
-	return &node
+}
+
+func (s *BFTRaftServer) GetNodeNTXN(nodeId uint64) *pb.Node {
+	node := &pb.Node{}
+	s.DB.View(func(txn *badger.Txn) error {
+		node = s.GetNode(txn, nodeId)
+		return nil
+	})
+	return node
 }
 
 func (s *BFTRaftServer) GetNodePublicKey(nodeId uint64) *rsa.PublicKey {
@@ -63,7 +50,7 @@ func (s *BFTRaftServer) GetNodePublicKey(nodeId uint64) *rsa.PublicKey {
 	if cachedKey, cacheFound := s.NodePublicKeys.Get(cacheKey); cacheFound {
 		return cachedKey.(*rsa.PublicKey)
 	}
-	node := s.GetNode(nodeId)
+	node := s.GetNodeNTXN(nodeId)
 	if key, err := ParsePublicKey(node.PublicKey); err == nil {
 		s.NodePublicKeys.Set(cacheKey, &key, cache.DefaultExpiration)
 		return key
@@ -72,9 +59,11 @@ func (s *BFTRaftServer) GetNodePublicKey(nodeId uint64) *rsa.PublicKey {
 	}
 }
 
-func (s *BFTRaftServer) SaveNode(node *pb.Node) {
+func (s *BFTRaftServer) SaveNode(txn *badger.Txn, node *pb.Node) error {
 	if data, err := proto.Marshal(node); err == nil {
 		dbKey := append(ComposeKeyPrefix(NODE_LIST_GROUP, NODES_LIST), U64Bytes(node.Id)...)
-		s.DB.Set(dbKey, data, 0x00)
+		return txn.Set(dbKey, data, 0x00)
+	} else {
+		return err
 	}
 }

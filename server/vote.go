@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
+	"github.com/dgraph-io/badger"
 )
 
 func RequestVoteRequestSignData(req *pb.RequestVoteRequest) []byte {
@@ -32,8 +33,8 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 	group := meta.Group
 	ResetTerm(meta, group.Term+1)
 	term := group.Term
-	s.SaveGroup(meta.Group)
-	lastEntry := s.LastLogEntry(group.Id)
+	s.SaveGroupNTXN(meta.Group)
+	lastEntry := s.LastLogEntryNTXN(group.Id)
 	request := &pb.RequestVoteRequest{
 		Group:       group.Id,
 		Term:        term,
@@ -52,7 +53,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 		if nodeId == s.Id {
 			continue
 		}
-		node := s.GetNode(nodeId)
+		node := s.GetNodeNTXN(nodeId)
 		go func() {
 			if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 				if voteResponse, err := client.RequestVote(context.Background(), request); err == nil {
@@ -101,7 +102,9 @@ func (s *BFTRaftServer) BecomeLeader(meta *RTGroupMeta) {
 	// we can use a dedicated rpc protocol for this, but no bother
 	meta.Role = LEADER
 	meta.Group.LeaderPeer = meta.Peer // set self to leader for next following requests
-	s.SaveGroup(meta.Group)
+	s.DB.Update(func(txn *badger.Txn) error {
+		return s.SaveGroup(txn, meta.Group)
+	})
 	s.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
 }
 
@@ -133,7 +136,7 @@ func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.App
 		meta.Role = FOLLOWER
 		meta.Group.LeaderPeer = appendEntryReq.LeaderId
 		ResetTerm(meta, appendEntryReq.Term)
-		s.SaveGroup(meta.Group)
+		s.SaveGroupNTXN(meta.Group)
 		return true
 	} else {
 		return false

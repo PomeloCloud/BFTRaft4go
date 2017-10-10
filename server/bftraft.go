@@ -16,11 +16,6 @@ import (
 	"time"
 )
 
-const (
-	MAX_TERM_BUMP = 10
-	ALPHA_GROUP   = 1 // the group for recording server members, groups, peers etc
-)
-
 type Options struct {
 	DBPath           string
 	Address          string
@@ -32,7 +27,7 @@ type Options struct {
 type BFTRaftServer struct {
 	Id                uint64
 	Opts              Options
-	DB                *badger.KV
+	DB                *badger.DB
 	FuncReg           map[uint64]map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte
 	GroupsOnboard     map[uint64]*RTGroupMeta
 	Peers             *cache.Cache
@@ -58,16 +53,16 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 		Signature: s.Sign(CommandSignData(group_id, s.Id, cmd.RequestId, []byte{})),
 		Result:    []byte{},
 	}
-	group := s.GetGroup(group_id)
+	group := s.GetGroupNTXN(group_id)
 	if group == nil {
 		return response, nil
 	}
 	leader_peer_id := group.LeaderPeer
-	leader_peer := s.GetPeer(group_id, leader_peer_id)
+	leader_peer := s.GetPeerNTXN(group_id, leader_peer_id)
 	if leader_peer == nil {
 		return response, nil
 	}
-	if leader_node := s.GetNode(leader_peer.Host); leader_node != nil {
+	if leader_node := s.GetNodeNTXN(leader_peer.Host); leader_node != nil {
 		if leader_node.Id != s.Id {
 			if client, err := utils.GetClusterRPC(leader_node.ServerAddr); err != nil {
 				return client.ExecCommand(ctx, cmd)
@@ -77,15 +72,20 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			response.LeaderId = leader_peer.Id
 			groupMeta.Lock.Lock()
 			defer groupMeta.Lock.Unlock()
-			index := s.IncrGetGroupLogLastIndex(group_id)
-			hash, _ := LogHash(s.LastEntryHash(group_id), index, cmd.FuncId, cmd.Arg)
-			logEntry := pb.LogEntry{
-				Term:    group.Term,
-				Index:   index,
-				Hash:    hash,
-				Command: cmd,
-			}
-			if s.AppendEntryToLocal(group, &logEntry) == nil {
+			var index uint64
+			var hash []byte
+			var logEntry pb.LogEntry
+			if err := s.DB.Update(func(txn *badger.Txn) error {
+				index = s.IncrGetGroupLogLastIndex(txn, group_id)
+				hash, _ = LogHash(s.LastEntryHash(txn, group_id), index, cmd.FuncId, cmd.Arg)
+				logEntry = pb.LogEntry{
+					Term:    group.Term,
+					Index:   index,
+					Hash:    hash,
+					Command: cmd,
+				}
+				return s.AppendEntryToLocal(txn, group, &logEntry)
+			}); err == nil {
 				s.SendFollowersHeartbeat(ctx, leader_peer_id, group)
 				if s.WaitLogApproved(group_id, index) {
 					response.Result = *s.CommitGroupLog(group_id, &logEntry)
@@ -105,8 +105,8 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	group := groupMeta.Group
 	reqLeaderId := req.LeaderId
 	leaderPeer := groupMeta.GroupPeers[reqLeaderId]
-	lastLogHash := s.LastEntryHash(groupId)
-	thisPeer := s.GroupServerPeer(groupId)
+	lastLogHash := s.LastEntryHashNTXN(groupId)
+	thisPeer := s.GroupServerPeerNTXN(groupId)
 	thisPeerId := uint64(0)
 	if thisPeer != nil {
 		thisPeerId = thisPeer.Id
@@ -114,7 +114,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	response := &pb.AppendEntriesResponse{
 		Group:     groupId,
 		Term:      group.Term,
-		Index:     s.GetGroupLogLastIndex(groupId),
+		Index:     s.GetGroupLogLastIndexNTXN(groupId),
 		Successed: false,
 		Convinced: false,
 		Hash:      lastLogHash,
@@ -141,7 +141,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	}
 	response.Convinced = true
 	// check leader node exists
-	leaderNode := s.GetNode(leaderPeer.Host)
+	leaderNode := s.GetNodeNTXN(leaderPeer.Host)
 	if leaderPeer == nil {
 		return response, nil
 	}
@@ -161,8 +161,8 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		// if the leader failed to provide the right first entries, the follower
 		// 	 will not commit the log but response with current log index and term instead
 		// the leader should response immediately for failed follower response
-		lastLogEntry := s.LastLogEntry(groupId)
-		lastLogIdx := s.GetGroupLogLastIndex(groupId)
+		lastLogEntry := s.LastLogEntryNTXN(groupId)
+		lastLogIdx := s.GetGroupLogLastIndexNTXN(groupId)
 		nextLogIdx := lastLogIdx + 1
 		if lastLogEntry.Index != lastLogIdx {
 			// this is unexpected, should be detected quickly
@@ -176,7 +176,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 			} else {
 				// first log matched
 				// but we still need to check hash for upcoming logs
-				expectedHash := s.LastEntryHash(groupId)
+				expectedHash := s.LastEntryHashNTXN(groupId)
 				for i := nextLogIdx; i < nextLogIdx+uint64(len(req.Entries)); i++ {
 					entry := req.Entries[i-nextLogIdx]
 					cmd := entry.Command
@@ -205,7 +205,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						if peer.Host == s.Id {
 							continue
 						}
-						if node := s.GetNode(peer.Host); node != nil {
+						if node := s.GetNodeNTXN(peer.Host); node != nil {
 							if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 								response.Term = entry.Term
 								response.Index = entry.Index
@@ -228,8 +228,11 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						}
 					}
 					if s.WaitLogApproved(groupId, entry.Index) {
-						s.IncrGetGroupLogLastIndex(groupId)
-						s.AppendEntryToLocal(group, entry)
+						s.DB.View(func(txn *badger.Txn) error {
+							s.IncrGetGroupLogLastIndex(txn, groupId)
+							s.AppendEntryToLocal(txn, group, entry)
+							return nil
+						})
 					}
 					result := s.CommitGroupLog(groupId, entry)
 					client := s.GetClient(entry.Command.ClientId)
@@ -272,11 +275,11 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		return response, nil
 	}
 	peerId := req.Peer
-	peer := s.GetPeer(groupId, peerId)
+	peer := s.GetPeerNTXN(groupId, peerId)
 	if peer == nil {
 		return response, nil
 	}
-	thisPeer := s.GroupServerPeer(groupId)
+	thisPeer := s.GroupServerPeerNTXN(groupId)
 	if thisPeer == nil {
 		return response, nil
 	}
@@ -284,14 +287,17 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 	if VerifySign(s.GetNodePublicKey(peer.Host), req.Signature, req.Hash) != nil {
 		return response, nil
 	}
-	if s.GetGroupLogLastIndex(groupId) > req.Index {
+	if s.GetGroupLogLastIndexNTXN(groupId) > req.Index {
 		// this node will never have a chance to provide it's vote to the log
 		// will check correctness and vote specifically for client peer without broadcasting
-		entry := s.GetLogEntry(groupId, req.Index)
-		if entry != nil && bytes.Equal(entry.Hash, req.Hash) {
-			response.Appended = true
-			response.Failed = false
-		}
+		s.DB.View(func(txn *badger.Txn) error {
+			entry := s.GetLogEntry(txn, groupId, req.Index)
+			if entry != nil && bytes.Equal(entry.Hash, req.Hash) {
+				response.Appended = true
+				response.Failed = false
+			}
+			return nil
+		})
 	} else {
 		// this log entry have not yet been appended
 		// in this case, this peer will just cast client peer vote
@@ -311,7 +317,7 @@ func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequ
 	groupId := req.Group
 	meta := s.GroupsOnboard[groupId]
 	group := meta.Group
-	lastLogEntry := s.LastLogEntry(groupId)
+	lastLogEntry := s.LastLogEntryNTXN(groupId)
 	vote := &pb.RequestVoteResponse{
 		Group:       groupId,
 		Term:        group.GetTerm(),
@@ -333,7 +339,7 @@ func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequ
 		// already voted to other peer
 		return vote, nil
 	}
-	if req.Term-group.Term > MAX_TERM_BUMP {
+	if req.Term-group.Term > utils.MAX_TERM_BUMP {
 		// the candidate bump terms too fast
 		return vote, nil
 	}
@@ -364,15 +370,6 @@ func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequ
 	return vote, nil
 }
 
-func NodesSignData(nodes []*pb.Node) []byte {
-	signData := []byte{}
-	for _, node := range nodes {
-		nodeBytes, _ := proto.Marshal(node)
-		signData = append(signData, nodeBytes...)
-	}
-	return signData
-}
-
 func GetPeersSignData(peers []*pb.Peer) []byte {
 	signData := []byte{}
 	for _, peer := range peers {
@@ -385,19 +382,29 @@ func GetPeersSignData(peers []*pb.Peer) []byte {
 func (s *BFTRaftServer) GroupNodes(ctx context.Context, request *pb.GroupId) (*pb.GroupNodesResponse, error) {
 	// Outlet for group server memberships that contains all of the meta data on the network
 	// This API is intended to be invoked from any machine to any members in the cluster
-	nodes := []*pb.Node{}
-	peers := GetGroupPeersFromKV(request.GroupId, s.DB)
-	for _, peer := range peers {
-		node := s.GetNode(peer.Host)
-		nodes = append(nodes, node)
-	}
+	result := []*pb.Node{}
+	s.DB.View(func(txn *badger.Txn) error {
+		nodes := []*pb.Node{}
+		peers := GetGroupPeersFromKV(txn, request.GroupId)
+		for _, peer := range peers {
+			node := s.GetNode(txn, peer.Host)
+			nodes = append(nodes, node)
+		}
+		result = nodes
+		return nil
+	})
 	// signature should be optional for clients in case of the client don't know server public keys
-	return &pb.GroupNodesResponse{Nodes: nodes, Signature: s.Sign(NodesSignData(nodes))}, nil
+	return &pb.GroupNodesResponse{Nodes: result, Signature: s.Sign(utils.NodesSignData(result))}, nil
 }
 
 func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupId) (*pb.GroupPeersResponse, error) {
-	lastEntry := s.LastLogEntry(req.GroupId)
-	peersMap := GetGroupPeersFromKV(req.GroupId, s.DB)
+	peersMap := map[uint64]*pb.Peer{}
+	lastEntry := &pb.LogEntry{}
+	s.DB.View(func(txn *badger.Txn) error {
+		lastEntry = s.LastLogEntry(txn, req.GroupId)
+		peersMap = GetGroupPeersFromKV(txn, req.GroupId)
+		return nil
+	})
 	peers := []*pb.Peer{}
 	for _, p := range peersMap {
 		peers = append(peers, p)
@@ -410,35 +417,38 @@ func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupId) (*pb.Gr
 }
 
 func (s *BFTRaftServer) GetGroupContent(ctx context.Context, req *pb.GroupId) (*pb.RaftGroup, error) {
-	return s.GetGroup(req.GroupId), nil
+	return s.GetGroupNTXN(req.GroupId), nil
 }
 
 
 // TODO: Signature
 func (s *BFTRaftServer) PullGroupLogs(ctx context.Context, req *pb.PullGroupLogsResuest) (*pb.LogEntries, error) {
 	keyPrefix := ComposeKeyPrefix(req.Group, LOG_ENTRIES)
-	iter := s.DB.NewIterator(badger.IteratorOptions{})
-	iter.Seek(append(keyPrefix, U64Bytes(uint64(req.Index))...))
 	result := []*pb.LogEntry{}
-	if iter.ValidForPrefix(keyPrefix) {
-		firstEntry := LogEntryFromKVItem(iter.Item())
-		if firstEntry.Index == req.Index {
-			for true {
-				iter.Next()
-				if iter.ValidForPrefix(keyPrefix) {
-					entry := LogEntryFromKVItem(iter.Item())
-					result = append(result, entry)
-				} else {
-					break
+	err := s.DB.View(func(txn *badger.Txn) error {
+		iter := txn.NewIterator(badger.IteratorOptions{})
+		iter.Seek(append(keyPrefix, U64Bytes(uint64(req.Index))...))
+		if iter.ValidForPrefix(keyPrefix) {
+			firstEntry := LogEntryFromKVItem(iter.Item())
+			if firstEntry.Index == req.Index {
+				for true {
+					iter.Next()
+					if iter.ValidForPrefix(keyPrefix) {
+						entry := LogEntryFromKVItem(iter.Item())
+						result = append(result, entry)
+					} else {
+						break
+					}
 				}
+			} else {
+				log.Println("First entry not match")
 			}
 		} else {
-			log.Println("First entry not match")
+			log.Println("Requesting non existed")
 		}
-	} else {
-		log.Println("Requesting non existed")
-	}
-	return &pb.LogEntries{Entries: result}, nil
+		return nil
+	})
+	return &pb.LogEntries{Entries: result}, err
 }
 
 func (s *BFTRaftServer) RegisterRaftFunc(group uint64, func_id uint64, fn func(arg *[]byte, entry *pb.LogEntry) []byte) {
@@ -466,7 +476,7 @@ func StartServer(serverOpts Options) error {
 	dbopt := badger.DefaultOptions
 	dbopt.Dir = serverOpts.DBPath
 	dbopt.ValueDir = serverOpts.DBPath
-	db, err := badger.NewKV(&dbopt)
+	db, err := badger.Open(&dbopt)
 	if err != nil {
 		return err
 	}
@@ -508,12 +518,14 @@ func InitDatabase(dbPath string) {
 		dbopt := badger.DefaultOptions
 		dbopt.Dir = dbPath
 		dbopt.ValueDir = dbPath
-		db, err := badger.NewKV(&dbopt)
+		db, err := badger.Open(&dbopt)
 		if err != nil {
 			panic(err)
 		}
 		configBytes, err := proto.Marshal(&config)
-		db.Set(ComposeKeyPrefix(CONFIG_GROUP, SERVER_CONF), configBytes, 0x00)
+		db.Update(func(txn *badger.Txn) error {
+			return txn.Set(ComposeKeyPrefix(CONFIG_GROUP, SERVER_CONF), configBytes, 0x00)
+		})
 		if err := db.Close(); err != nil {
 			panic(err)
 		}

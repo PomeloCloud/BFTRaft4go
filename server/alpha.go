@@ -5,6 +5,7 @@ import (
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/golang/protobuf/proto"
+	"github.com/dgraph-io/badger"
 )
 
 // Alpha group is a group specialized for tracking network members and groups
@@ -30,7 +31,7 @@ func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
 	// get alpha peers from alpha nodes
 	alphaPeersRes := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupPeers(context.Background(), &spb.GroupId{
-			GroupId: ALPHA_GROUP,
+			GroupId: utils.ALPHA_GROUP,
 		}); err == nil {
 			return res, GetPeersSignData(res.Peers)
 		} else {
@@ -49,7 +50,7 @@ func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
 		}
 	}
 	lastEntry := alphaPeersRes.LastEntry
-	group := s.GetGroup(ALPHA_GROUP)
+	group := s.GetGroupNTXN(utils.ALPHA_GROUP)
 	if isAlphaMember {
 		if group == nil {
 			panic("Alpha member cannot find alpha group")
@@ -59,7 +60,7 @@ func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
 		if group == nil {
 			// alpha group cannot be found, it need to be generated
 			group = utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
-				if res, err := client.GetGroupContent(context.Background(), &spb.GroupId{ALPHA_GROUP}); err == nil {
+				if res, err := client.GetGroupContent(context.Background(), &spb.GroupId{GroupId: utils.ALPHA_GROUP}); err == nil {
 					if data, err2 := proto.Marshal(res); err2 == nil {
 						return res, data
 					} else {
@@ -72,13 +73,15 @@ func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
 		}
 		if group != nil {
 			group.Term = lastEntry.Term
-			s.SetGroupLogLastIndex(ALPHA_GROUP, lastEntry.Index)
-			// the index will be used to observe changes
-			s.SaveGroup(group)
-			for _, peer := range peers {
-				s.SavePeer(peer)
-			}
-
+			s.DB.Update(func(txn *badger.Txn) error {
+				s.SetGroupLogLastIndex(txn, utils.ALPHA_GROUP, lastEntry.Index)
+				// the index will be used to observe changes
+				s.SaveGroup(txn, group)
+				for _, peer := range peers {
+					s.SavePeer(txn, peer)
+				}
+				return nil
+			})
 		}
 	}
 }

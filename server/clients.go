@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"log"
 )
 
 type Client struct {
@@ -53,22 +54,45 @@ func NewClientStore() ClientStore {
 	return store
 }
 
+func ClientDBID (clientId uint64) []byte {
+	return append(ComposeKeyPrefix(CLIENT_LIST_GROUP, CLIENT), U64Bytes(clientId)...)
+}
+
 func (s *BFTRaftServer) GetClient(clientId uint64) *spb.Client {
 	cacheKey := strconv.Itoa(int(clientId))
 	if cachedClient, found := s.Clients.Get(cacheKey); found {
 		return cachedClient.(*spb.Client)
 	}
-	dbKey := ComposeKeyPrefix(CLIENT_LIST_GROUP, CLIENT)
-	item := badger.KVItem{}
-	s.DB.Get(dbKey, &item)
-	data := ItemValue(&item)
-	if data == nil {
-		return nil
+	dbKey := ClientDBID(clientId)
+	item := &badger.Item{}
+	if err := s.DB.Update(func(txn *badger.Txn) error {
+		 txn.Get(dbKey)
+		 return nil
+	}); err == nil {
+		data := ItemValue(item)
+		if data == nil {
+			return nil
+		} else {
+			client := spb.Client{}
+			proto.Unmarshal(*data, &client)
+			s.Clients.Set(cacheKey, &client, cache.DefaultExpiration)
+			return &client
+		}
 	} else {
-		client := spb.Client{}
-		proto.Unmarshal(*data, &client)
-		s.Clients.Set(cacheKey, &client, cache.DefaultExpiration)
-		return &client
+		log.Println(err)
+		return nil
+	}
+}
+
+func (s *BFTRaftServer) SaveClient (client *spb.Client) error {
+	dbKey := ClientDBID(client.Id)
+	if data, err := proto.Marshal(client); err == nil {
+		return s.DB.Update(func(txn *badger.Txn) error {
+			txn.Set(dbKey, data, 0x00)
+			return nil
+		})
+	} else {
+		return nil
 	}
 }
 

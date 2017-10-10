@@ -4,6 +4,8 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/golang/protobuf/proto"
 	"log"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
+	"github.com/dgraph-io/badger"
 )
 
 const (
@@ -14,10 +16,10 @@ const (
 )
 
 func (s *BFTRaftServer) RegisterMembershipCommands() {
-	s.RegisterRaftFunc(ALPHA_GROUP, NODE_JOIN, s.NodeJoin)
-	s.RegisterRaftFunc(ALPHA_GROUP, REG_NODE, s.RegNode)
-	s.RegisterRaftFunc(ALPHA_GROUP, NEW_CLIENT, s.NewClient)
-	s.RegisterRaftFunc(ALPHA_GROUP, NODE_GROUP, s.NewGroup)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_JOIN, s.NodeJoin)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, REG_NODE, s.RegNode)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, NEW_CLIENT, s.NewClient)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_GROUP, s.NewGroup)
 }
 
 
@@ -28,7 +30,10 @@ func (s *BFTRaftServer) RegNode(arg *[]byte, entry *pb.LogEntry) []byte {
 	if err := proto.Unmarshal(*arg, &node); err == nil {
 		node.Id = HashPublicKeyBytes(node.PublicKey)
 		node.Online = true
-		s.SaveNode(&node)
+		s.DB.Update(func(txn *badger.Txn) error {
+			s.SaveNode(txn, &node)
+			return nil
+		})
 		return []byte{1}
 	}  else {
 		log.Println(err)
@@ -56,7 +61,9 @@ func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			MatchIndex: 0,
 		}
 		// first, save the peer
-		s.SavePeer(&peer)
+		s.DB.Update(func(txn *badger.Txn) error {
+			return s.SavePeer(txn, &peer)
+		})
 		// next, check if this node is in the group. Add it on board if found.
 		// because membership logs entries will be replicated on every node
 		// this function will also be executed every where

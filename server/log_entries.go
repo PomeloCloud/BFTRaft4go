@@ -6,6 +6,7 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
+	"github.com/pkg/errors"
 )
 
 type LogEntryIterator struct {
@@ -13,15 +14,7 @@ type LogEntryIterator struct {
 	data   *badger.Iterator
 }
 
-type LogAppendError struct {
-	msg string
-}
-
-func (e *LogAppendError) Error() string {
-	return fmt.Sprintf("%s", e.msg)
-}
-
-func LogEntryFromKVItem(item *badger.KVItem) *pb.LogEntry {
+func LogEntryFromKVItem(item *badger.Item) *pb.LogEntry {
 	entry := pb.LogEntry{}
 	itemData := ItemValue(item)
 	if itemData == nil {
@@ -44,9 +37,9 @@ func (liter *LogEntryIterator) Close() {
 	liter.data.Close()
 }
 
-func (s *BFTRaftServer) ReversedLogIterator(group uint64) LogEntryIterator {
+func (s *BFTRaftServer) ReversedLogIterator(txn *badger.Txn, group uint64) LogEntryIterator {
 	keyPrefix := ComposeKeyPrefix(group, LOG_ENTRIES)
-	iter := s.DB.NewIterator(badger.IteratorOptions{Reverse: true})
+	iter := txn.NewIterator(badger.IteratorOptions{Reverse: true})
 	iter.Seek(append(keyPrefix, U64Bytes(^uint64(0))...)) // search from max possible index
 	return LogEntryIterator{
 		prefix: keyPrefix,
@@ -54,16 +47,27 @@ func (s *BFTRaftServer) ReversedLogIterator(group uint64) LogEntryIterator {
 	}
 }
 
-func (s *BFTRaftServer) LastLogEntry(group uint64) *pb.LogEntry {
-	iter := s.ReversedLogIterator(group)
+func (s *BFTRaftServer) LastLogEntry(txn *badger.Txn, group uint64) *pb.LogEntry {
+	iter := s.ReversedLogIterator(txn, group)
 	entry := iter.Next()
 	iter.Close()
 	return entry
 }
 
-func (s *BFTRaftServer) LastEntryHash(group_id uint64) []byte {
+func (s *BFTRaftServer) LastLogEntryNTXN(group uint64) *pb.LogEntry {
+	entry := &pb.LogEntry{}
+	s.DB.View(func(txn *badger.Txn) error {
+		iter := s.ReversedLogIterator(txn, group)
+		entry = iter.Next()
+		iter.Close()
+		return nil
+	})
+	return entry
+}
+
+func (s *BFTRaftServer) LastEntryHash(txn *badger.Txn, group_id uint64) []byte {
 	var hash []byte
-	lastLog := s.LastLogEntry(group_id)
+	lastLog := s.LastLogEntry(txn, group_id)
 	if lastLog == nil {
 		hash, _ = SHA1Hash([]byte(fmt.Sprint("GROUP:", group_id)))
 	} else {
@@ -72,24 +76,33 @@ func (s *BFTRaftServer) LastEntryHash(group_id uint64) []byte {
 	return hash
 }
 
+func (s *BFTRaftServer) LastEntryHashNTXN(group_id uint64) []byte {
+	hash := []byte{}
+	s.DB.View(func(txn *badger.Txn) error {
+		hash = s.LastEntryHash(txn, group_id)
+		return nil
+	})
+	return hash
+}
+
 func LogEntryKey(groupId uint64, entryIndex uint64) []byte {
 	return append(ComposeKeyPrefix(groupId, LOG_ENTRIES), U64Bytes(entryIndex)...)
 }
 
-func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry *pb.LogEntry) error {
+func (s *BFTRaftServer) AppendEntryToLocal(txn *badger.Txn, group *pb.RaftGroup, entry *pb.LogEntry) error {
 	group_id := entry.Command.Group
 	key := LogEntryKey(group_id, entry.Index)
-	existed, err := s.DB.Exists(key)
+	_, err := txn.Get(key)
 	if err != nil {
 		return err
-	} else if !existed {
+	} else if err == badger.ErrKeyNotFound {
 		cmd := entry.Command
-		hash, _ := LogHash(s.LastEntryHash(group_id), entry.Index, cmd.FuncId, cmd.Arg)
+		hash, _ := LogHash(s.LastEntryHash(txn, group_id), entry.Index, cmd.FuncId, cmd.Arg)
 		if !bytes.Equal(hash, entry.Hash) {
-			return &LogAppendError{"Log entry hash mismatch"}
+			return errors.New("Log entry hash mismatch")
 		}
 		if data, err := proto.Marshal(entry); err != nil {
-			s.DB.Set(key, data, 0x00)
+			txn.Set(key, data, 0x00)
 			return nil
 		} else {
 			return err
@@ -99,11 +112,13 @@ func (s *BFTRaftServer) AppendEntryToLocal(group *pb.RaftGroup, entry *pb.LogEnt
 	}
 }
 
-func (s *BFTRaftServer) GetLogEntry(groupId uint64, entryIndex uint64) *pb.LogEntry {
+func (s *BFTRaftServer) GetLogEntry(txn *badger.Txn, groupId uint64, entryIndex uint64) *pb.LogEntry {
 	key := LogEntryKey(groupId, entryIndex)
-	item := badger.KVItem{}
-	s.DB.Get(key, &item)
-	return LogEntryFromKVItem(&item)
+	if item, err := txn.Get(key); err == nil {
+		return LogEntryFromKVItem(item)
+	} else {
+		return nil
+	}
 }
 
 func AppendLogEntrySignData(groupId uint64, term uint64, prevIndex uint64, prevTerm uint64) []byte {
