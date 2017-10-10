@@ -80,7 +80,15 @@ func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 
 
 func (s *BFTRaftServer) NewClient(arg *[]byte, entry *pb.LogEntry) []byte {
-	return []byte{}
+	client := pb.Client{}
+	proto.Unmarshal(*arg, &client)
+	client.Id = HashPublicKeyBytes(client.PrivateKey)
+	if err := s.SaveClient(&client); err != nil {
+		return []byte{1}
+	} else {
+		log.Println(err)
+		return []byte{0}
+	}
 }
 
 func (s *BFTRaftServer) NewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
