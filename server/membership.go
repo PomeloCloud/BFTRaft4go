@@ -2,10 +2,11 @@ package server
 
 import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
-	"github.com/golang/protobuf/proto"
-	"log"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
+	"github.com/golang/protobuf/proto"
+	"log"
+	"errors"
 )
 
 const (
@@ -22,7 +23,6 @@ func (s *BFTRaftServer) RegisterMembershipCommands() {
 	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_GROUP, s.NewGroup)
 }
 
-
 // Register a node into the network
 // The node may be new or it was rejoined with new address
 func (s *BFTRaftServer) RegNode(arg *[]byte, entry *pb.LogEntry) []byte {
@@ -35,7 +35,7 @@ func (s *BFTRaftServer) RegNode(arg *[]byte, entry *pb.LogEntry) []byte {
 			return nil
 		})
 		return []byte{1}
-	}  else {
+	} else {
 		log.Println(err)
 		return []byte{0}
 	}
@@ -46,28 +46,37 @@ func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 	if err := proto.Unmarshal(*arg, &req); err == nil {
 		node := entry.Command.ClientId
 		// this should be fine, a public key can use both for client and node
-		group := req.Group
+		groupId := req.Group
 		if node == s.Id {
 			// skip if current node is the joined node
-			// when joined a group, the node should do all of
+			// when joined a groupId, the node should do all of
 			// those following things by itself after the log is replicated
 			return []byte{2}
 		}
+
 		peer := pb.Peer{
-			Id: node,
-			Group: group,
-			Host: node,
-			NextIndex: 0,
+			Id:         node,
+			Group:      groupId,
+			Host:       node,
+			NextIndex:  0,
 			MatchIndex: 0,
 		}
-		// first, save the peer
-		s.DB.Update(func(txn *badger.Txn) error {
+		if err := s.DB.Update(func(txn *badger.Txn) error {
+			group := s.GetGroup(txn, groupId)
+			// check if this groupId exceeds it's replication
+			if len(GetGroupPeersFromKV(txn, groupId)) >= int(group.Replications) {
+				return errors.New("exceed replications")
+			}
+			// first, save the peer
 			return s.SavePeer(txn, &peer)
-		})
-		// next, check if this node is in the group. Add it on board if found.
+		}); err != nil {
+			log.Println(err)
+			return []byte{0}
+		}
+		// next, check if this node is in the groupId. Add it on board if found.
 		// because membership logs entries will be replicated on every node
 		// this function will also be executed every where
-		if meta, found := s.GroupsOnboard[group]; found {
+		if meta, found := s.GroupsOnboard[groupId]; found {
 			meta.Lock.Lock()
 			defer meta.Lock.Unlock()
 			meta.GroupPeers[peer.Id] = &peer
@@ -77,7 +86,6 @@ func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 		return []byte{0}
 	}
 }
-
 
 func (s *BFTRaftServer) NewClient(arg *[]byte, entry *pb.LogEntry) []byte {
 	client := pb.Client{}
