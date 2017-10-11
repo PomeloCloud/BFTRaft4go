@@ -96,8 +96,13 @@ func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 }
 
 func (s *BFTRaftServer) NewClient(arg *[]byte, entry *pb.LogEntry) []byte {
+	// use for those hosts only want to make changes, and does not contribute it's resources
 	client := pb.Host{}
-	proto.Unmarshal(*arg, &client)
+	err := proto.Unmarshal(*arg, &client)
+	if err != nil {
+		log.Println(err)
+		return []byte{0}
+	}
 	client.Id = HashPublicKeyBytes(client.PublicKey)
 	if err := s.SaveHostNTXN(&client); err != nil {
 		return []byte{1}
@@ -108,5 +113,45 @@ func (s *BFTRaftServer) NewClient(arg *[]byte, entry *pb.LogEntry) []byte {
 }
 
 func (s *BFTRaftServer) NewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
-	return []byte{}
+	hostId := entry.Command.ClientId
+	// create and make the creator the member of this group
+	group := pb.RaftGroup{}
+	err := proto.Unmarshal(*arg, &group)
+	if err != nil {
+		log.Println(err)
+		return []byte{0}
+	}
+	// replication cannot be below 1 and cannot larger than 100
+	if group.Replications < 1 || group.Replications > 100 {
+		return []byte{0}
+	}
+	if err := s.DB.Update(func(txn *badger.Txn) error {
+		// the proposer will decide the id for the group, we need to check it's availability
+		if s.GetGroup(txn, group.Id) != nil {
+			return errors.New("group existed")
+		}
+		// regularize and save group
+		group.Term = 0
+		group.LeaderPeer = hostId
+		if err := s.SaveGroup(txn, &group); err != nil {
+			return err
+		}
+		// generate peer
+		peer := pb.Peer{
+			Id: hostId,
+			Group: group.Id,
+			Host: hostId,
+			NextIndex: 0,
+			MatchIndex: 0,
+		}
+		if err := s.SavePeer(txn, &peer); err == nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return []byte{1}
+	} else {
+		log.Println(err)
+		return []byte{0}
+	}
 }
