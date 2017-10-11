@@ -16,7 +16,7 @@ func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
 	var peers map[uint64]*pb.Peer
 	keyPrefix := ComposeKeyPrefix(group, GROUP_PEERS)
 	iter := txn.NewIterator(badger.IteratorOptions{})
-	iter.Seek(append(keyPrefix, U64Bytes(0)...)) // seek the head
+	iter.Seek(append(keyPrefix, utils.U64Bytes(0)...)) // seek the head
 	for iter.ValidForPrefix(keyPrefix) {
 		item := iter.Item()
 		item_data := ItemValue(item)
@@ -34,7 +34,7 @@ func (s *BFTRaftServer) GetPeer(txn *badger.Txn, group uint64, peer_id uint64) *
 	if cachedFound {
 		return cachedPeer.(*pb.Peer)
 	}
-	dbKey := append(ComposeKeyPrefix(group, GROUP_PEERS), U64Bytes(peer_id)...)
+	dbKey := append(ComposeKeyPrefix(group, GROUP_PEERS), utils.U64Bytes(peer_id)...)
 	item, _:= txn.Get(dbKey)
 	data := ItemValue(item)
 	if data == nil {
@@ -114,7 +114,7 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 			Entries:      entries,
 		})
 		if err == nil {
-				if VerifySign(s.GetHostPublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
+				if utils.VerifySign(s.GetHostPublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
 					return
 				}
 				var lastEntry *pb.LogEntry
@@ -155,7 +155,7 @@ func (s *BFTRaftServer) GroupServerPeerNTXN(groupId uint64) *pb.Peer {
 }
 
 func ScanHostedGroups(db *badger.DB, serverId uint64) map[uint64]*RTGroupMeta {
-	scanKey := U64Bytes(GROUP_PEERS)
+	scanKey := utils.U64Bytes(GROUP_PEERS)
 	res := map[uint64]*RTGroupMeta{}
 	db.View(func(txn *badger.Txn) error {
 		iter := txn.NewIterator(badger.IteratorOptions{})
@@ -196,7 +196,7 @@ func (s *BFTRaftServer) OnboardGroupPeersSlice(groupId uint64) []*pb.Peer {
 
 func (s *BFTRaftServer) SavePeer(txn *badger.Txn, peer *pb.Peer) error {
 	if data, err := proto.Marshal(peer); err == nil {
-		dbKey := append(ComposeKeyPrefix(peer.Group, GROUP_PEERS), U64Bytes(peer.Id)...)
+		dbKey := append(ComposeKeyPrefix(peer.Group, GROUP_PEERS), utils.U64Bytes(peer.Id)...)
 		return txn.Set(dbKey, data, 0x00)
 	} else {
 		return err

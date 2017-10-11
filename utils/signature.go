@@ -1,4 +1,4 @@
-package server
+package utils
 
 import (
 	"crypto"
@@ -44,10 +44,6 @@ func HashPublicKeyBytes(keyData []byte) uint64 {
 func HashPublicKey(key *rsa.PublicKey) uint64 {
 	keyData, _ := x509.MarshalPKIXPublicKey(key)
 	return HashPublicKeyBytes(keyData)
-}
-
-func (s *BFTRaftServer) Sign(data []byte) []byte {
-	return Sign(s.PrivateKey, data)
 }
 
 func Sign(privateKey *rsa.PrivateKey, data []byte) []byte {

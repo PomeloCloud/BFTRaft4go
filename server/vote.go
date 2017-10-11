@@ -59,7 +59,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 				if voteResponse, err := client.RequestVote(context.Background(), request); err == nil {
 					publicKey := s.GetHostPublicKey(nodeId)
 					signData := RequestVoteResponseSignData(voteResponse)
-					if VerifySign(publicKey, voteResponse.Signature, signData) == nil {
+					if utils.VerifySign(publicKey, voteResponse.Signature, signData) == nil {
 						if voteResponse.Granted && voteResponse.LogIndex <= lastEntry.Index {
 							lock.Lock()
 							votes++
@@ -123,7 +123,7 @@ func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.App
 		// check their signatures
 		signData := RequestVoteResponseSignData(vote)
 		publicKey := s.GetHostPublicKey(votePeer.Host)
-		if VerifySign(publicKey, vote.Signature, signData) != nil {
+		if utils.VerifySign(publicKey, vote.Signature, signData) != nil {
 			continue
 		}
 		// check their properties to avoid forging

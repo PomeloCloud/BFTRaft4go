@@ -7,6 +7,7 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 type LogEntryIterator struct {
@@ -40,7 +41,7 @@ func (liter *LogEntryIterator) Close() {
 func (s *BFTRaftServer) ReversedLogIterator(txn *badger.Txn, group uint64) LogEntryIterator {
 	keyPrefix := ComposeKeyPrefix(group, LOG_ENTRIES)
 	iter := txn.NewIterator(badger.IteratorOptions{Reverse: true})
-	iter.Seek(append(keyPrefix, U64Bytes(^uint64(0))...)) // search from max possible index
+	iter.Seek(append(keyPrefix, utils.U64Bytes(^uint64(0))...)) // search from max possible index
 	return LogEntryIterator{
 		prefix: keyPrefix,
 		data:   iter,
@@ -69,7 +70,7 @@ func (s *BFTRaftServer) LastEntryHash(txn *badger.Txn, group_id uint64) []byte {
 	var hash []byte
 	lastLog := s.LastLogEntry(txn, group_id)
 	if lastLog == nil {
-		hash, _ = SHA1Hash([]byte(fmt.Sprint("GROUP:", group_id)))
+		hash, _ = utils.SHA1Hash([]byte(fmt.Sprint("GROUP:", group_id)))
 	} else {
 		hash = lastLog.Hash
 	}
@@ -86,7 +87,7 @@ func (s *BFTRaftServer) LastEntryHashNTXN(group_id uint64) []byte {
 }
 
 func LogEntryKey(groupId uint64, entryIndex uint64) []byte {
-	return append(ComposeKeyPrefix(groupId, LOG_ENTRIES), U64Bytes(entryIndex)...)
+	return append(ComposeKeyPrefix(groupId, LOG_ENTRIES), utils.U64Bytes(entryIndex)...)
 }
 
 func (s *BFTRaftServer) AppendEntryToLocal(txn *badger.Txn, group *pb.RaftGroup, entry *pb.LogEntry) error {
@@ -97,7 +98,7 @@ func (s *BFTRaftServer) AppendEntryToLocal(txn *badger.Txn, group *pb.RaftGroup,
 		return err
 	} else if err == badger.ErrKeyNotFound {
 		cmd := entry.Command
-		hash, _ := LogHash(s.LastEntryHash(txn, group_id), entry.Index, cmd.FuncId, cmd.Arg)
+		hash, _ := utils.LogHash(s.LastEntryHash(txn, group_id), entry.Index, cmd.FuncId, cmd.Arg)
 		if !bytes.Equal(hash, entry.Hash) {
 			return errors.New("Log entry hash mismatch")
 		}
@@ -134,8 +135,8 @@ func EB(b bool) byte {
 }
 
 func ApproveAppendSignData(res *pb.ApproveAppendResponse) []byte {
-	bs1 := append(U64Bytes(res.Peer), EB(res.Appended), EB(res.Delayed), EB(res.Failed))
-	return append(bs1, U64Bytes(res.Index)...)
+	bs1 := append(utils.U64Bytes(res.Peer), EB(res.Appended), EB(res.Delayed), EB(res.Failed))
+	return append(bs1, utils.U64Bytes(res.Index)...)
 }
 
 func (s *BFTRaftServer) CommitGroupLog(groupId uint64, entry *pb.LogEntry) *[]byte {

@@ -33,13 +33,13 @@ type ClientOptions struct {
 // bootstraps is a list of server address believed to be the member of the network
 // the list does not need to contain alpha nodes since all of the nodes on the network will get informed
 func NewClient(bootstraps []string, opts ClientOptions) (*BFTRaftClient, error) {
-	privateKey, err := server.ParsePrivateKey(opts.PrivateKey)
+	privateKey, err := utils.ParsePrivateKey(opts.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
-	publicKey := server.PublicKeyFromPrivate(privateKey)
+	publicKey := utils.PublicKeyFromPrivate(privateKey)
 	bftclient := &BFTRaftClient{
-		Id:          server.HashPublicKey(publicKey),
+		Id:          utils.HashPublicKey(publicKey),
 		PrivateKey:  privateKey,
 		Lock:        sync.RWMutex{},
 		AlphaNodes:  []*spb.BFTRaftClient{},
@@ -118,7 +118,7 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 		Arg:       arg,
 	}
 	signData := server.ExecCommandSignData(cmdReq)
-	cmdReq.Signature = server.Sign(brc.PrivateKey, signData)
+	cmdReq.Signature = utils.Sign(brc.PrivateKey, signData)
 	brc.CmdResChan[groupId][reqId] = make(chan []byte)
 	defer func() {
 		close(brc.CmdResChan[groupId][reqId])

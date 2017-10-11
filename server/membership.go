@@ -28,7 +28,7 @@ func (s *BFTRaftServer) RegisterMembershipCommands() {
 func (s *BFTRaftServer) RegHost(arg *[]byte, entry *pb.LogEntry) []byte {
 	node := pb.Host{}
 	if err := proto.Unmarshal(*arg, &node); err == nil {
-		node.Id = HashPublicKeyBytes(node.PublicKey)
+		node.Id = utils.HashPublicKeyBytes(node.PublicKey)
 		node.Online = true
 		nodeClient := pb.Host{
 			Id: node.Id,
@@ -103,7 +103,7 @@ func (s *BFTRaftServer) NewClient(arg *[]byte, entry *pb.LogEntry) []byte {
 		log.Println(err)
 		return []byte{0}
 	}
-	client.Id = HashPublicKeyBytes(client.PublicKey)
+	client.Id = utils.HashPublicKeyBytes(client.PublicKey)
 	if err := s.SaveHostNTXN(&client); err != nil {
 		return []byte{1}
 	} else {

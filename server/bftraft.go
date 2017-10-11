@@ -77,7 +77,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			var logEntry pb.LogEntry
 			if err := s.DB.Update(func(txn *badger.Txn) error {
 				index = s.IncrGetGroupLogLastIndex(txn, group_id)
-				hash, _ = LogHash(s.LastEntryHash(txn, group_id), index, cmd.FuncId, cmd.Arg)
+				hash, _ = utils.LogHash(s.LastEntryHash(txn, group_id), index, cmd.FuncId, cmd.Arg)
 				logEntry = pb.LogEntry{
 					Term:    group.Term,
 					Index:   index,
@@ -148,7 +148,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	// verify signature
 	if leaderPublicKey := s.GetHostPublicKey(leaderNode.Id); leaderPublicKey != nil {
 		signData := AppendLogEntrySignData(group.Id, group.Term, req.PrevLogIndex, req.PrevLogTerm)
-		if VerifySign(leaderPublicKey, req.Signature, signData) != nil {
+		if utils.VerifySign(leaderPublicKey, req.Signature, signData) != nil {
 			return response, nil
 		}
 	} else {
@@ -180,7 +180,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				for i := nextLogIdx; i < nextLogIdx+uint64(len(req.Entries)); i++ {
 					entry := req.Entries[i-nextLogIdx]
 					cmd := entry.Command
-					expectedHash, _ = LogHash(expectedHash, i, cmd.FuncId, cmd.Arg)
+					expectedHash, _ = utils.LogHash(expectedHash, i, cmd.FuncId, cmd.Arg)
 					if entry.Index != i || !bytes.Equal(entry.Hash, expectedHash) || !s.VerifyCommandSign(entry.Command) {
 						// not all entries match or cannot verified
 						return response, nil
@@ -213,7 +213,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 								response.Signature = s.Sign(entry.Hash)
 								go func() {
 									if approveRes, err := client.ApproveAppend(ctx, response); err != nil {
-										if VerifySign(
+										if utils.VerifySign(
 											s.GetHostPublicKey(node.Id),
 											approveRes.Signature,
 											ApproveAppendSignData(approveRes),
@@ -284,7 +284,7 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		return response, nil
 	}
 	response.Peer = thisPeer.Id
-	if VerifySign(s.GetHostPublicKey(peer.Host), req.Signature, req.Hash) != nil {
+	if utils.VerifySign(s.GetHostPublicKey(peer.Host), req.Signature, req.Hash) != nil {
 		return response, nil
 	}
 	if s.GetGroupLogLastIndexNTXN(groupId) > req.Index {
@@ -427,7 +427,7 @@ func (s *BFTRaftServer) PullGroupLogs(ctx context.Context, req *pb.PullGroupLogs
 	result := []*pb.LogEntry{}
 	err := s.DB.View(func(txn *badger.Txn) error {
 		iter := txn.NewIterator(badger.IteratorOptions{})
-		iter.Seek(append(keyPrefix, U64Bytes(uint64(req.Index))...))
+		iter.Seek(append(keyPrefix, utils.U64Bytes(uint64(req.Index))...))
 		if iter.ValidForPrefix(keyPrefix) {
 			firstEntry := LogEntryFromKVItem(iter.Item())
 			if firstEntry.Index == req.Index {
@@ -491,6 +491,10 @@ func (s *BFTRaftServer) GetGroupLeader(ctx context.Context, req *pb.GroupId) (*p
 	return response, err
 }
 
+func (s *BFTRaftServer) Sign(data []byte) []byte {
+	return utils.Sign(s.PrivateKey, data)
+}
+
 func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 	flag.Parse()
 	dbopt := badger.DefaultOptions
@@ -504,11 +508,11 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	privateKey, err := ParsePrivateKey(config.PrivateKey)
+	privateKey, err := utils.ParsePrivateKey(config.PrivateKey)
 	if err != nil {
 		return nil, err
 	}
-	id := HashPublicKey(PublicKeyFromPrivate(privateKey))
+	id := utils.HashPublicKey(utils.PublicKeyFromPrivate(privateKey))
 	bftRaftServer := BFTRaftServer{
 		Id:                id,
 		Opts:              serverOpts,
@@ -537,7 +541,7 @@ func StartServer(server *BFTRaftServer) error {
 
 func InitDatabase(dbPath string) {
 	config := pb.ServerConfig{}
-	if privateKey, _, err := GenerateKey(); err == nil {
+	if privateKey, _, err := utils.GenerateKey(); err == nil {
 		config.PrivateKey = privateKey
 		dbopt := badger.DefaultOptions
 		dbopt.Dir = dbPath

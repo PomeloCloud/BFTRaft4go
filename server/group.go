@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 	"log"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 const (
@@ -79,7 +80,7 @@ func (s *BFTRaftServer) GetGroupLogLastIndex(txn *badger.Txn, groupId uint64) ui
 		data := ItemValue(item)
 		var idx uint64 = 0
 		if data != nil {
-			idx = BytesU64(*data, 0)
+			idx = utils.BytesU64(*data, 0)
 		}
 		return idx
 	} else {
@@ -103,10 +104,10 @@ func (s *BFTRaftServer) IncrGetGroupLogLastIndex(txn *badger.Txn, groupId uint64
 		data := ItemValue(item)
 		var idx uint64 = 0
 		if data != nil {
-			idx = BytesU64(*data, 0)
+			idx = utils.BytesU64(*data, 0)
 		}
 		idx += 1
-		if txn.Set(key, U64Bytes(idx), 0x00) == nil {
+		if txn.Set(key, utils.U64Bytes(idx), 0x00) == nil {
 			return idx
 		}
 	} else {
@@ -117,7 +118,7 @@ func (s *BFTRaftServer) IncrGetGroupLogLastIndex(txn *badger.Txn, groupId uint64
 
 func (s *BFTRaftServer)SetGroupLogLastIndex(txn *badger.Txn, groupId uint64, idx uint64) error  {
 	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
-	return txn.Set(key, U64Bytes(idx), 0x00)
+	return txn.Set(key, utils.U64Bytes(idx), 0x00)
 }
 
 func (s *BFTRaftServer) SaveGroup(txn *badger.Txn, group *pb.RaftGroup) error {
