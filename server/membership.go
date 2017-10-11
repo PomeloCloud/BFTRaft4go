@@ -17,15 +17,15 @@ const (
 )
 
 func (s *BFTRaftServer) RegisterMembershipCommands() {
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_JOIN, s.NodeJoin)
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, REG_NODE, s.RegHost)
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, NEW_CLIENT, s.NewClient)
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_GROUP, s.NewGroup)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_JOIN, s.SMNodeJoin)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, REG_NODE, s.SMRegHost)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, NEW_CLIENT, s.SMNewClient)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_GROUP, s.SMNewGroup)
 }
 
 // Register a node into the network
 // The node may be new or it was rejoined with new address
-func (s *BFTRaftServer) RegHost(arg *[]byte, entry *pb.LogEntry) []byte {
+func (s *BFTRaftServer) SMRegHost(arg *[]byte, entry *pb.LogEntry) []byte {
 	node := pb.Host{}
 	if err := proto.Unmarshal(*arg, &node); err == nil {
 		node.Id = utils.HashPublicKeyBytes(node.PublicKey)
@@ -49,7 +49,7 @@ func (s *BFTRaftServer) RegHost(arg *[]byte, entry *pb.LogEntry) []byte {
 	}
 }
 
-func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
+func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 	req := pb.NodeJoinGroupEntry{}
 	if err := proto.Unmarshal(*arg, &req); err == nil {
 		node := entry.Command.ClientId
@@ -95,7 +95,7 @@ func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 	}
 }
 
-func (s *BFTRaftServer) NewClient(arg *[]byte, entry *pb.LogEntry) []byte {
+func (s *BFTRaftServer) SMNewClient(arg *[]byte, entry *pb.LogEntry) []byte {
 	// use for those hosts only want to make changes, and does not contribute it's resources
 	client := pb.Host{}
 	err := proto.Unmarshal(*arg, &client)
@@ -112,7 +112,7 @@ func (s *BFTRaftServer) NewClient(arg *[]byte, entry *pb.LogEntry) []byte {
 	}
 }
 
-func (s *BFTRaftServer) NewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
+func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 	hostId := entry.Command.ClientId
 	// create and make the creator the member of this group
 	group := pb.RaftGroup{}
