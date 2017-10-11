@@ -7,6 +7,8 @@ import (
 	"github.com/golang/protobuf/proto"
 	"log"
 	"errors"
+	"context"
+	"crypto/x509"
 )
 
 const (
@@ -153,5 +155,35 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 	} else {
 		log.Println(err)
 		return []byte{0}
+	}
+}
+
+func (s BFTRaftServer) RegHost() error {
+	groupId := uint64(utils.ALPHA_GROUP)
+	publicKey := utils.PublicKeyFromPrivate(s.PrivateKey)
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return err
+	}
+	host := pb.Host{
+		Id: s.Id,
+		LastSeen: 0,
+		Online: true,
+		ServerAddr: s.Opts.Address,
+		PublicKey: publicKeyBytes,
+	}
+	hostData, err := proto.Marshal(&host)
+	if err != nil {
+		return err
+	}
+	res, err := s.Client.ExecCommand(groupId, REG_NODE, hostData)
+	if err != nil {
+		return err
+	}
+	switch (*res)[0] {
+	case 0:
+		return errors.New("remote error")
+	case 1:
+		return nil
 	}
 }
