@@ -471,22 +471,22 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 	RefreshTimer(s.GroupsOnboard[group.Id], 1)
 }
 
-func StartServer(serverOpts Options) error {
+func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 	flag.Parse()
 	dbopt := badger.DefaultOptions
 	dbopt.Dir = serverOpts.DBPath
 	dbopt.ValueDir = serverOpts.DBPath
 	db, err := badger.Open(&dbopt)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	config, err := GetConfig(db)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	privateKey, err := ParsePrivateKey(config.PrivateKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	id := HashPublicKey(PublicKeyFromPrivate(privateKey))
 	bftRaftServer := BFTRaftServer{
@@ -505,10 +505,15 @@ func StartServer(serverOpts Options) error {
 		PrivateKey:        privateKey,
 	}
 	bftRaftServer.GroupsOnboard = ScanHostedGroups(db, id)
+	bftRaftServer.RegisterMembershipCommands()
 	bftRaftServer.SyncAlphaGroup(serverOpts.bootstrap)
-	bftRaftServer.StartTimingWheel()
-	pb.RegisterBFTRaftServer(utils.GetGRPCServer(serverOpts.Address), &bftRaftServer)
-	return utils.GRPCServerListen(serverOpts.Address)
+	return &bftRaftServer, nil
+}
+
+func StartServer(server *BFTRaftServer) error {
+	server.StartTimingWheel()
+	pb.RegisterBFTRaftServer(utils.GetGRPCServer(server.Opts.Address), server)
+	return utils.GRPCServerListen(server.Opts.Address)
 }
 
 func InitDatabase(dbPath string) {
