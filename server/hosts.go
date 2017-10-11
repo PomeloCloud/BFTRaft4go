@@ -75,28 +75,12 @@ func (s *BFTRaftServer) SaveHostNTXN(node *pb.Host) error {
 	})
 }
 
-func ExecCommandSignData(cmd *pb.CommandRequest) []byte {
-	return CommandSignData(
-		cmd.Group,
-		cmd.ClientId,
-		cmd.RequestId,
-		append(utils.U64Bytes(cmd.FuncId), cmd.Arg...),
-	)
-}
-
 func (s *BFTRaftServer) VerifyCommandSign(cmd *pb.CommandRequest) bool {
-	signData := ExecCommandSignData(cmd)
+	signData := utils.ExecCommandSignData(cmd)
 	publicKey := s.GetHostPublicKey(cmd.ClientId)
 	if publicKey == nil {
 		return false
 	} else {
 		return utils.VerifySign(publicKey, cmd.Signature, signData) == nil
 	}
-}
-
-func CommandSignData(group uint64, sender uint64, reqId uint64, data []byte) []byte {
-	groupBytes := utils.U64Bytes(group)
-	senderBytes := utils.U64Bytes(sender)
-	reqIdBytes := utils.U64Bytes(reqId)
-	return append(append(append(groupBytes, senderBytes...), reqIdBytes...), data...)
 }

@@ -17,17 +17,11 @@ import (
 
 // This file contains all of the functions for cluster nodes to track changes in alpha group
 
-func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
+func (s *BFTRaftServer) SyncAlphaGroup() {
 	// Force a snapshot sync for group members by asking alpha nodes for it
 	// This function should be invoked every time it startup
 	// First we need to get all alpha nodes
-	alphaNodes := utils.AlphaNodes(bootstrap)
-	alphaRPCs := []*spb.BFTRaftClient{}
-	for _, node := range alphaNodes {
-		if rpc, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
-			alphaRPCs = append(alphaRPCs, &rpc)
-		}
-	}
+	alphaRPCs := s.Client.AlphaRPCs
 	// get alpha peers from alpha nodes
 	alphaPeersRes := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupPeers(context.Background(), &spb.GroupId{

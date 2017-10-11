@@ -3,7 +3,9 @@ package server
 import (
 	"bytes"
 	"crypto/rsa"
+	"errors"
 	"flag"
+	"github.com/PomeloCloud/BFTRaft4go/client"
 	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
@@ -14,7 +16,6 @@ import (
 	"log"
 	"sync"
 	"time"
-	"errors"
 )
 
 type Options struct {
@@ -38,6 +39,7 @@ type BFTRaftServer struct {
 	GroupApprovedLogs *cache.Cache
 	NodePublicKeys    *cache.Cache
 	ClientPublicKeys  *cache.Cache
+	Client            *client.BFTRaftClient
 	PrivateKey        *rsa.PrivateKey
 	ClientRPCs        ClientStore
 	lock              sync.RWMutex
@@ -50,7 +52,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 		LeaderId:  0,
 		NodeId:    s.Id,
 		RequestId: cmd.RequestId,
-		Signature: s.Sign(CommandSignData(group_id, s.Id, cmd.RequestId, []byte{})),
+		Signature: s.Sign(utils.CommandSignData(group_id, s.Id, cmd.RequestId, []byte{})),
 		Result:    []byte{},
 	}
 	group := s.GetGroupNTXN(group_id)
@@ -93,7 +95,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			}
 		}
 	}
-	response.Signature = s.Sign(CommandSignData(
+	response.Signature = s.Sign(utils.CommandSignData(
 		response.Group, response.NodeId, response.RequestId, response.Result,
 	))
 	return response, nil
@@ -240,7 +242,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						if rpc, err := s.ClientRPCs.Get(client.ServerAddr); err == nil {
 							nodeId := s.Id
 							reqId := entry.Command.RequestId
-							signData := CommandSignData(groupId, nodeId, reqId, *result)
+							signData := utils.CommandSignData(groupId, nodeId, reqId, *result)
 							rpc.rpc.ResponseCommand(ctx, &cpb.CommandResult{
 								Group:     groupId,
 								NodeId:    nodeId,
@@ -420,7 +422,6 @@ func (s *BFTRaftServer) GetGroupContent(ctx context.Context, req *pb.GroupId) (*
 	return s.GetGroupNTXN(req.GroupId), nil
 }
 
-
 // TODO: Signature
 func (s *BFTRaftServer) PullGroupLogs(ctx context.Context, req *pb.PullGroupLogsResuest) (*pb.LogEntries, error) {
 	keyPrefix := ComposeKeyPrefix(req.Group, LOG_ENTRIES)
@@ -471,7 +472,7 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 	RefreshTimer(s.GroupsOnboard[group.Id], 1)
 }
 
-func (s *BFTRaftServer) GetGroupLeader(ctx context.Context, req *pb.GroupId) (*pb.GroupLeader, error)  {
+func (s *BFTRaftServer) GetGroupLeader(ctx context.Context, req *pb.GroupId) (*pb.GroupLeader, error) {
 	response := &pb.GroupLeader{}
 	err := s.DB.View(func(txn *badger.Txn) error {
 		groupId := req.GroupId
@@ -513,6 +514,10 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		return nil, err
 	}
 	id := utils.HashPublicKey(utils.PublicKeyFromPrivate(privateKey))
+	nclient, err := client.NewClient(serverOpts.bootstrap, client.ClientOptions{PrivateKey: config.PrivateKey})
+	if err != nil {
+		return nil, err
+	}
 	bftRaftServer := BFTRaftServer{
 		Id:                id,
 		Opts:              serverOpts,
@@ -525,11 +530,12 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
 		ClientPublicKeys:  cache.New(5*time.Minute, 1*time.Minute),
+		Client:            nclient,
 		PrivateKey:        privateKey,
 	}
 	bftRaftServer.GroupsOnboard = ScanHostedGroups(db, id)
 	bftRaftServer.RegisterMembershipCommands()
-	bftRaftServer.SyncAlphaGroup(serverOpts.bootstrap)
+	bftRaftServer.SyncAlphaGroup()
 	return &bftRaftServer, nil
 }
 
