@@ -144,7 +144,8 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 	select {
 	case <-replicationCompleted:
 		majorityHash := utils.PickMajority(responseHashes)
-		return &responseReceived[majorityHash], nil
+		majorityData := responseReceived[majorityHash]
+		return &majorityData, nil
 	case <-time.After(10 * time.Second):
 		close(brc.CmdResChan[groupId][reqId])
 		delete(brc.CmdResChan[groupId], reqId)
