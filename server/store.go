@@ -10,16 +10,14 @@ const (
 	LOG_ENTRIES    = 0
 	GROUP_PEERS    = 1
 	GROUP_META     = 2
-	NODES_LIST     = 3
+	HOST_LIST      = 3
 	GROUP_LAST_IDX = 4
-	CLIENT         = 5
 	SERVER_CONF    = 100
 )
 
 const (
-	NODE_LIST_GROUP   = 1
-	CLIENT_LIST_GROUP = 2
-	CONFIG_GROUP      = 0
+	HOST_LIST_GROUP = 1
+	CONFIG_GROUP    = 0
 )
 
 const (

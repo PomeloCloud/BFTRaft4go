@@ -32,8 +32,7 @@ type BFTRaftServer struct {
 	GroupsOnboard     map[uint64]*RTGroupMeta
 	Peers             *cache.Cache
 	Groups            *cache.Cache
-	Nodes             *cache.Cache
-	Clients           *cache.Cache
+	Hosts             *cache.Cache
 	GroupAppendedLogs *cache.Cache
 	GroupApprovedLogs *cache.Cache
 	NodePublicKeys    *cache.Cache
@@ -62,7 +61,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	if leader_peer == nil {
 		return response, nil
 	}
-	if leader_node := s.GetNodeNTXN(leader_peer.Host); leader_node != nil {
+	if leader_node := s.GetHostNTXN(leader_peer.Host); leader_node != nil {
 		if leader_node.Id != s.Id {
 			if client, err := utils.GetClusterRPC(leader_node.ServerAddr); err != nil {
 				return client.ExecCommand(ctx, cmd)
@@ -141,12 +140,12 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	}
 	response.Convinced = true
 	// check leader node exists
-	leaderNode := s.GetNodeNTXN(leaderPeer.Host)
+	leaderNode := s.GetHostNTXN(leaderPeer.Host)
 	if leaderPeer == nil {
 		return response, nil
 	}
 	// verify signature
-	if leaderPublicKey := s.GetNodePublicKey(leaderNode.Id); leaderPublicKey != nil {
+	if leaderPublicKey := s.GetHostPublicKey(leaderNode.Id); leaderPublicKey != nil {
 		signData := AppendLogEntrySignData(group.Id, group.Term, req.PrevLogIndex, req.PrevLogTerm)
 		if VerifySign(leaderPublicKey, req.Signature, signData) != nil {
 			return response, nil
@@ -205,7 +204,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						if peer.Host == s.Id {
 							continue
 						}
-						if node := s.GetNodeNTXN(peer.Host); node != nil {
+						if node := s.GetHostNTXN(peer.Host); node != nil {
 							if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 								response.Term = entry.Term
 								response.Index = entry.Index
@@ -214,7 +213,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 								go func() {
 									if approveRes, err := client.ApproveAppend(ctx, response); err != nil {
 										if VerifySign(
-											s.GetNodePublicKey(node.Id),
+											s.GetHostPublicKey(node.Id),
 											approveRes.Signature,
 											ApproveAppendSignData(approveRes),
 										) == nil {
@@ -235,9 +234,9 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 						})
 					}
 					result := s.CommitGroupLog(groupId, entry)
-					client := s.GetClient(entry.Command.ClientId)
+					client := s.GetHostNTXN(entry.Command.ClientId)
 					if client != nil {
-						if rpc, err := s.ClientRPCs.Get(client.Address); err == nil {
+						if rpc, err := s.ClientRPCs.Get(client.ServerAddr); err == nil {
 							nodeId := s.Id
 							reqId := entry.Command.RequestId
 							signData := CommandSignData(groupId, nodeId, reqId, *result)
@@ -284,7 +283,7 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		return response, nil
 	}
 	response.Peer = thisPeer.Id
-	if VerifySign(s.GetNodePublicKey(peer.Host), req.Signature, req.Hash) != nil {
+	if VerifySign(s.GetHostPublicKey(peer.Host), req.Signature, req.Hash) != nil {
 		return response, nil
 	}
 	if s.GetGroupLogLastIndexNTXN(groupId) > req.Index {
@@ -379,15 +378,15 @@ func GetPeersSignData(peers []*pb.Peer) []byte {
 	return signData
 }
 
-func (s *BFTRaftServer) GroupNodes(ctx context.Context, request *pb.GroupId) (*pb.GroupNodesResponse, error) {
+func (s *BFTRaftServer) GroupHosts(ctx context.Context, request *pb.GroupId) (*pb.GroupNodesResponse, error) {
 	// Outlet for group server memberships that contains all of the meta data on the network
 	// This API is intended to be invoked from any machine to any members in the cluster
-	result := []*pb.Node{}
+	result := []*pb.Host{}
 	s.DB.View(func(txn *badger.Txn) error {
-		nodes := []*pb.Node{}
+		nodes := []*pb.Host{}
 		peers := GetGroupPeersFromKV(txn, request.GroupId)
 		for _, peer := range peers {
-			node := s.GetNode(txn, peer.Host)
+			node := s.GetHost(txn, peer.Host)
 			nodes = append(nodes, node)
 		}
 		result = nodes
@@ -496,8 +495,7 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		ClientRPCs:        NewClientStore(),
 		Groups:            cache.New(1*time.Minute, 1*time.Minute),
 		Peers:             cache.New(1*time.Minute, 1*time.Minute),
-		Nodes:             cache.New(1*time.Minute, 1*time.Minute),
-		Clients:           cache.New(1*time.Minute, 1*time.Minute),
+		Hosts:             cache.New(1*time.Minute, 1*time.Minute),
 		GroupApprovedLogs: cache.New(2*time.Minute, 1*time.Minute),
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),

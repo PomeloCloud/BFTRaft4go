@@ -53,11 +53,11 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 		if nodeId == s.Id {
 			continue
 		}
-		node := s.GetNodeNTXN(nodeId)
+		node := s.GetHostNTXN(nodeId)
 		go func() {
 			if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 				if voteResponse, err := client.RequestVote(context.Background(), request); err == nil {
-					publicKey := s.GetNodePublicKey(nodeId)
+					publicKey := s.GetHostPublicKey(nodeId)
 					signData := RequestVoteResponseSignData(voteResponse)
 					if VerifySign(publicKey, voteResponse.Signature, signData) == nil {
 						if voteResponse.Granted && voteResponse.LogIndex <= lastEntry.Index {
@@ -122,7 +122,7 @@ func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.App
 		}
 		// check their signatures
 		signData := RequestVoteResponseSignData(vote)
-		publicKey := s.GetNodePublicKey(votePeer.Host)
+		publicKey := s.GetHostPublicKey(votePeer.Host)
 		if VerifySign(publicKey, vote.Signature, signData) != nil {
 			continue
 		}

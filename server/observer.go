@@ -15,7 +15,7 @@ func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 	}
 	peerClients := []pb.BFTRaftClient{}
 	for _, peer := range meta.GroupPeers {
-		node := s.GetNodeNTXN(peer.Host)
+		node := s.GetHostNTXN(peer.Host)
 		if rpc, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 			peerClients = append(peerClients, rpc)
 		}

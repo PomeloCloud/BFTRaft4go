@@ -18,26 +18,26 @@ const (
 
 func (s *BFTRaftServer) RegisterMembershipCommands() {
 	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_JOIN, s.NodeJoin)
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, REG_NODE, s.RegNode)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, REG_NODE, s.RegHost)
 	s.RegisterRaftFunc(utils.ALPHA_GROUP, NEW_CLIENT, s.NewClient)
 	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_GROUP, s.NewGroup)
 }
 
 // Register a node into the network
 // The node may be new or it was rejoined with new address
-func (s *BFTRaftServer) RegNode(arg *[]byte, entry *pb.LogEntry) []byte {
-	node := pb.Node{}
+func (s *BFTRaftServer) RegHost(arg *[]byte, entry *pb.LogEntry) []byte {
+	node := pb.Host{}
 	if err := proto.Unmarshal(*arg, &node); err == nil {
 		node.Id = HashPublicKeyBytes(node.PublicKey)
 		node.Online = true
-		nodeClient := pb.Client{
+		nodeClient := pb.Host{
 			Id: node.Id,
-			Address: node.ServerAddr,
-			PrivateKey: node.PublicKey,
+			ServerAddr: node.ServerAddr,
+			PublicKey: node.PublicKey,
 		}
 		s.DB.Update(func(txn *badger.Txn) error {
-			if err := s.SaveNode(txn, &node); err == nil {
-				return s.SaveClient(txn, &nodeClient)
+			if err := s.SaveHost(txn, &node); err == nil {
+				return s.SaveHost(txn, &nodeClient)
 			} else {
 				return err
 			}
@@ -96,10 +96,10 @@ func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 }
 
 func (s *BFTRaftServer) NewClient(arg *[]byte, entry *pb.LogEntry) []byte {
-	client := pb.Client{}
+	client := pb.Host{}
 	proto.Unmarshal(*arg, &client)
-	client.Id = HashPublicKeyBytes(client.PrivateKey)
-	if err := s.SaveClientNTXN(&client); err != nil {
+	client.Id = HashPublicKeyBytes(client.PublicKey)
+	if err := s.SaveHostNTXN(&client); err != nil {
 		return []byte{1}
 	} else {
 		log.Println(err)

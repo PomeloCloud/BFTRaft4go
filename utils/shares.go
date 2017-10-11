@@ -10,7 +10,7 @@ const (
 	ALPHA_GROUP   = 1 // the group for recording server members, groups, peers etc
 )
 
-func NodesSignData(nodes []*pb.Node) []byte {
+func NodesSignData(nodes []*pb.Host) []byte {
 	signData := []byte{}
 	for _, node := range nodes {
 		nodeBytes, _ := proto.Marshal(node)
