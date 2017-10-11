@@ -120,6 +120,10 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 	signData := server.ExecCommandSignData(cmdReq)
 	cmdReq.Signature = server.Sign(brc.PrivateKey, signData)
 	brc.CmdResChan[groupId][reqId] = make(chan []byte)
+	defer func() {
+		close(brc.CmdResChan[groupId][reqId])
+		delete(brc.CmdResChan[groupId], reqId)
+	}()
 	if cmdRes, err := leader.ExecCommand(context.Background(), cmdReq); err == nil {
 		// TODO: verify signature
 		// TODO: update leader if needed
@@ -147,8 +151,6 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 		majorityData := responseReceived[majorityHash]
 		return &majorityData, nil
 	case <-time.After(10 * time.Second):
-		close(brc.CmdResChan[groupId][reqId])
-		delete(brc.CmdResChan[groupId], reqId)
 		return nil, errors.New("does not receive enough response")
 	}
 }
