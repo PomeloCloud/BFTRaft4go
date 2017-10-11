@@ -12,6 +12,7 @@ service BFTRaft {
     rpc ApproveAppend (AppendEntriesResponse) returns (ApproveAppendResponse) {}
     rpc GroupHosts (GroupId) returns (GroupNodesResponse) {}
     rpc GroupPeers (GroupId) returns (GroupPeersResponse) {}
+    rpc GetGroupLeader(GroupId) returns (GroupLeader) {}
     rpc GetGroupContent (GroupId) returns (RaftGroup) {}
     rpc PullGroupLogs (PullGroupLogsResuest) returns (LogEntries) {}
 }
@@ -149,8 +150,9 @@ message NodeJoinGroupEntry {
     uint64 group = 1;
 }
 
-message JoinGroupResponse {
-
+message GroupLeader{
+    Host node = 1;
+    bytes signature = 2;
 }
 
 message Nothing {}

@@ -22,10 +22,10 @@ func (s *BFTRaftServer) SyncAlphaGroup(bootstrap []string) {
 	// This function should be invoked every time it startup
 	// First we need to get all alpha nodes
 	alphaNodes := utils.AlphaNodes(bootstrap)
-	alphaRPCs := []spb.BFTRaftClient{}
+	alphaRPCs := []*spb.BFTRaftClient{}
 	for _, node := range alphaNodes {
 		if rpc, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
-			alphaRPCs = append(alphaRPCs, rpc)
+			alphaRPCs = append(alphaRPCs, &rpc)
 		}
 	}
 	// get alpha peers from alpha nodes

@@ -47,8 +47,12 @@ func HashPublicKey(key *rsa.PublicKey) uint64 {
 }
 
 func (s *BFTRaftServer) Sign(data []byte) []byte {
+	return Sign(s.PrivateKey, data)
+}
+
+func Sign(privateKey *rsa.PrivateKey, data []byte) []byte {
 	hashed, hash := SHA1Hash(data)
-	signature, _ := rsa.SignPKCS1v15(rand.Reader, s.PrivateKey, hash, hashed)
+	signature, _ := rsa.SignPKCS1v15(rand.Reader, privateKey, hash, hashed)
 	return signature
 }
 

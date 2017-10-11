@@ -47,16 +47,23 @@ func PickMajority(hashes []uint64) uint64 {
 	return 0
 }
 
-func MajorityResponse(clients []spb.BFTRaftClient, f func(client spb.BFTRaftClient) (interface{}, []byte)) interface{} {
+func MajorityResponse(clients []*spb.BFTRaftClient, f func(client spb.BFTRaftClient) (interface{}, []byte)) interface{} {
 	serverResChan := make(chan FuncResult)
 	for _, c := range clients {
-		go func() {
-			res, fea := f(c)
+		if c == nil {
 			serverResChan <- FuncResult{
-				result:  res,
-				feature: fea,
+				result:  nil,
+				feature: []byte{0},
 			}
-		}()
+		} else {
+			go func() {
+				res, fea := f(*c)
+				serverResChan <- FuncResult{
+					result:  res,
+					feature: fea,
+				}
+			}()
+		}
 	}
 	hashes := []uint64{}
 	vals := map[uint64]interface{}{}

@@ -14,6 +14,7 @@ import (
 	"log"
 	"sync"
 	"time"
+	"errors"
 )
 
 type Options struct {
@@ -468,6 +469,26 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 		}
 	}
 	RefreshTimer(s.GroupsOnboard[group.Id], 1)
+}
+
+func (s *BFTRaftServer) GetGroupLeader(ctx context.Context, req *pb.GroupId) (*pb.GroupLeader, error)  {
+	response := &pb.GroupLeader{}
+	err := s.DB.View(func(txn *badger.Txn) error {
+		groupId := req.GroupId
+		group := s.GetGroup(txn, groupId)
+		if group == nil {
+			return errors.New("cannot find group")
+		}
+		leader_peer_id := group.LeaderPeer
+		host := s.GetHost(txn, leader_peer_id)
+		if host == nil {
+			return errors.New("cannot find host")
+		} else {
+			response.Node = host
+			return nil
+		}
+	})
+	return response, err
 }
 
 func GetServer(serverOpts Options) (*BFTRaftServer, error) {

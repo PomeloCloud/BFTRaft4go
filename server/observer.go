@@ -13,11 +13,11 @@ func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 	if !foundMeta {
 		panic("meta not found for pull")
 	}
-	peerClients := []pb.BFTRaftClient{}
+	peerClients := []*pb.BFTRaftClient{}
 	for _, peer := range meta.GroupPeers {
 		node := s.GetHostNTXN(peer.Host)
 		if rpc, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
-			peerClients = append(peerClients, rpc)
+			peerClients = append(peerClients, &rpc)
 		}
 	}
 	req := &pb.PullGroupLogsResuest{

@@ -6,10 +6,10 @@ import (
 )
 
 func AlphaNodes(servers []string) []*spb.Host {
-	bootstrapServers := []spb.BFTRaftClient{}
+	bootstrapServers := []*spb.BFTRaftClient{}
 	for _, addr := range servers {
 		if c, err := GetClusterRPC(addr); err == nil {
-			bootstrapServers = append(bootstrapServers, c)
+			bootstrapServers = append(bootstrapServers, &c)
 		}
 	}
 	return MajorityResponse(bootstrapServers, func(c spb.BFTRaftClient) (interface{}, []byte) {
