@@ -84,16 +84,19 @@ func (s *BFTRaftServer) GetClient(clientId uint64) *spb.Client {
 	}
 }
 
-func (s *BFTRaftServer) SaveClient (client *spb.Client) error {
+func (s *BFTRaftServer) SaveClient (txn *badger.Txn, client *spb.Client) error {
 	dbKey := ClientDBID(client.Id)
 	if data, err := proto.Marshal(client); err == nil {
-		return s.DB.Update(func(txn *badger.Txn) error {
-			txn.Set(dbKey, data, 0x00)
-			return nil
-		})
+		return txn.Set(dbKey, data, 0x00)
 	} else {
 		return nil
 	}
+}
+
+func (s *BFTRaftServer) SaveClientNTXN (client *spb.Client) error {
+	return s.DB.Update(func(txn *badger.Txn) error {
+		return s.SaveClient(txn, client)
+	})
 }
 
 func CommandSignData(group uint64, sender uint64, reqId uint64, data []byte) []byte {

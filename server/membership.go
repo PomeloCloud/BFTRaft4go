@@ -30,9 +30,17 @@ func (s *BFTRaftServer) RegNode(arg *[]byte, entry *pb.LogEntry) []byte {
 	if err := proto.Unmarshal(*arg, &node); err == nil {
 		node.Id = HashPublicKeyBytes(node.PublicKey)
 		node.Online = true
+		nodeClient := pb.Client{
+			Id: node.Id,
+			Address: node.ServerAddr,
+			PrivateKey: node.PublicKey,
+		}
 		s.DB.Update(func(txn *badger.Txn) error {
-			s.SaveNode(txn, &node)
-			return nil
+			if err := s.SaveNode(txn, &node); err == nil {
+				return s.SaveClient(txn, &nodeClient)
+			} else {
+				return err
+			}
 		})
 		return []byte{1}
 	} else {
@@ -63,7 +71,7 @@ func (s *BFTRaftServer) NodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 		}
 		if err := s.DB.Update(func(txn *badger.Txn) error {
 			group := s.GetGroup(txn, groupId)
-			// check if this groupId exceeds it's replication
+			// check if this group exceeds it's replication
 			if len(GetGroupPeersFromKV(txn, groupId)) >= int(group.Replications) {
 				return errors.New("exceed replications")
 			}
@@ -91,7 +99,7 @@ func (s *BFTRaftServer) NewClient(arg *[]byte, entry *pb.LogEntry) []byte {
 	client := pb.Client{}
 	proto.Unmarshal(*arg, &client)
 	client.Id = HashPublicKeyBytes(client.PrivateKey)
-	if err := s.SaveClient(&client); err != nil {
+	if err := s.SaveClientNTXN(&client); err != nil {
 		return []byte{1}
 	} else {
 		log.Println(err)
