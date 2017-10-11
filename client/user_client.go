@@ -1,13 +1,15 @@
 package client
 
 import (
+	"context"
 	"crypto/rsa"
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/patrickmn/go-cache"
 	"sync"
-	"context"
+	"time"
+	"strconv"
 )
 
 type BFTRaftClient struct {
@@ -36,6 +38,7 @@ func NewClient(bootstraps []string, opts ClientOptions) (*BFTRaftClient, error) 
 		PrivateKey: privateKey,
 		Lock:       sync.RWMutex{},
 		AlphaNodes: []*spb.BFTRaftClient{},
+		Groups:     cache.New(1*time.Minute, 1*time.Minute),
 	}
 	bftclient.RefreshAlphaNodes(bootstraps)
 	return bftclient, nil
@@ -51,11 +54,19 @@ func (brc *BFTRaftClient) RefreshAlphaNodes(bootstraps []string) {
 }
 
 func (brc *BFTRaftClient) GetGroupHosts(groupId uint64) *[]*spb.Host {
-	return utils.MajorityResponse(brc.AlphaNodes, func(client spb.BFTRaftClient) (interface{}, []byte) {
+	cacheKey := strconv.Itoa(int(groupId))
+	if cached, found := brc.Groups.Get(cacheKey); found {
+		return cached.(*[]*spb.Host)
+	}
+	hosts := utils.MajorityResponse(brc.AlphaNodes, func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupHosts(context.Background(), &spb.GroupId{GroupId: groupId}); err == nil {
 			return &res.Nodes, utils.NodesSignData(res.Nodes)
 		} else {
 			return nil, []byte{}
 		}
 	}).(*[]*spb.Host)
+	if hosts != nil {
+		brc.Groups.Set(cacheKey, hosts, cache.DefaultExpiration)
+	}
+	return hosts
 }
