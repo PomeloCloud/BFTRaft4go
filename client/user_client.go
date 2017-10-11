@@ -10,7 +10,6 @@ import (
 	"time"
 
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
-	"github.com/PomeloCloud/BFTRaft4go/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/patrickmn/go-cache"
 )
@@ -18,7 +17,7 @@ import (
 type BFTRaftClient struct {
 	Id          uint64
 	PrivateKey  *rsa.PrivateKey
-	AlphaNodes  []*spb.BFTRaftClient
+	AlphaRPCs   []*spb.BFTRaftClient
 	GroupHosts  *cache.Cache
 	GroupLeader *cache.Cache
 	CmdResChan  map[uint64]map[uint64]chan []byte
@@ -42,7 +41,7 @@ func NewClient(bootstraps []string, opts ClientOptions) (*BFTRaftClient, error) 
 		Id:          utils.HashPublicKey(publicKey),
 		PrivateKey:  privateKey,
 		Lock:        sync.RWMutex{},
-		AlphaNodes:  []*spb.BFTRaftClient{},
+		AlphaRPCs:   []*spb.BFTRaftClient{},
 		GroupHosts:  cache.New(1*time.Minute, 1*time.Minute),
 		GroupLeader: cache.New(1*time.Minute, 1*time.Minute),
 		Counter:     0,
@@ -55,7 +54,7 @@ func (brc *BFTRaftClient) RefreshAlphaNodes(bootstraps []string) {
 	nodes := utils.AlphaNodes(bootstraps)
 	for _, node := range nodes {
 		if c, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
-			brc.AlphaNodes = append(brc.AlphaNodes, &c)
+			brc.AlphaRPCs = append(brc.AlphaRPCs, &c)
 		}
 	}
 }
@@ -65,7 +64,7 @@ func (brc *BFTRaftClient) GetGroupHosts(groupId uint64) *[]*spb.Host {
 	if cached, found := brc.GroupHosts.Get(cacheKey); found {
 		return cached.(*[]*spb.Host)
 	}
-	hosts := utils.MajorityResponse(brc.AlphaNodes, func(client spb.BFTRaftClient) (interface{}, []byte) {
+	hosts := utils.MajorityResponse(brc.AlphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupHosts(
 			context.Background(), &spb.GroupId{GroupId: groupId},
 		); err == nil {
@@ -85,7 +84,7 @@ func (brc *BFTRaftClient) GetGroupLeader(groupId uint64) spb.BFTRaftClient {
 	if cached, found := brc.GroupLeader.Get(cacheKey); found {
 		return cached.(spb.BFTRaftClient)
 	}
-	leaderHost := utils.MajorityResponse(brc.AlphaNodes, func(client spb.BFTRaftClient) (interface{}, []byte) {
+	leaderHost := utils.MajorityResponse(brc.AlphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GetGroupLeader(
 			context.Background(), &spb.GroupId{GroupId: groupId},
 		); err == nil {
@@ -117,7 +116,7 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 		FuncId:    funcId,
 		Arg:       arg,
 	}
-	signData := server.ExecCommandSignData(cmdReq)
+	signData := utils.ExecCommandSignData(cmdReq)
 	cmdReq.Signature = utils.Sign(brc.PrivateKey, signData)
 	brc.CmdResChan[groupId][reqId] = make(chan []byte)
 	defer func() {

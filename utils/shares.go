@@ -18,3 +18,19 @@ func NodesSignData(nodes []*pb.Host) []byte {
 	}
 	return signData
 }
+
+func CommandSignData(group uint64, sender uint64, reqId uint64, data []byte) []byte {
+	groupBytes := U64Bytes(group)
+	senderBytes := U64Bytes(sender)
+	reqIdBytes := U64Bytes(reqId)
+	return append(append(append(groupBytes, senderBytes...), reqIdBytes...), data...)
+}
+
+func ExecCommandSignData(cmd *pb.CommandRequest) []byte {
+	return CommandSignData(
+		cmd.Group,
+		cmd.ClientId,
+		cmd.RequestId,
+		append(U64Bytes(cmd.FuncId), cmd.Arg...),
+	)
+}
