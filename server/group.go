@@ -135,3 +135,18 @@ func (s *BFTRaftServer) SaveGroupNTXN(group *pb.RaftGroup) error {
 		return s.SaveGroup(txn, group)
 	})
 }
+
+func (s *BFTRaftServer)GetGroupHosts(groupId uint64 ) []*pb.Host   {
+	result := []*pb.Host{}
+	s.DB.View(func(txn *badger.Txn) error {
+		nodes := []*pb.Host{}
+		peers := GetGroupPeersFromKV(txn, groupId)
+		for _, peer := range peers {
+			node := s.GetHost(txn, peer.Host)
+			nodes = append(nodes, node)
+		}
+		result = nodes
+		return nil
+	})
+	return result
+}

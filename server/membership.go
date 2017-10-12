@@ -1,13 +1,17 @@
 package server
 
 import (
+	"context"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"log"
+	"time"
+	"sync"
 )
 
 const (
@@ -90,10 +94,26 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 		if meta, found := s.GroupsOnboard[groupId]; found {
 			meta.Lock.Lock()
 			defer meta.Lock.Unlock()
+			address := s.GetHostNTXN(entry.Command.ClientId).ServerAddr
+			inv := &pb.GroupInvitation{
+				Group:  groupId,
+				Leader: meta.Group.LeaderPeer,
+				Node:   meta.Peer,
+			}
+			inv.Signature = s.Sign(InvitationSignature(inv))
+			if client, err := utils.GetClusterRPC(address); err != nil {
+				go client.SendGroupInvitation(context.Background(), inv)
+				s.GroupsOnboard[groupId].GroupPeers[peer.Id] = &peer
+				return []byte{1}
+			} else {
+				log.Println(err)
+				return []byte{0}
+			}
 			meta.GroupPeers[node] = &peer
 		}
 		return []byte{1}
 	} else {
+		log.Println(err)
 		return []byte{0}
 	}
 }
@@ -113,6 +133,10 @@ func (s *BFTRaftServer) SMNewClient(arg *[]byte, entry *pb.LogEntry) []byte {
 		log.Println(err)
 		return []byte{0}
 	}
+}
+
+func InvitationSignature(inv *pb.GroupInvitation) []byte {
+	return []byte(fmt.Sprint(inv.Group, "-", inv.Node, "-", inv.Leader))
 }
 
 func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
@@ -200,11 +224,56 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 	if err != nil {
 		return err
 	}
-	switch (*res)[0] {
-	case 0:
+	if (*res)[0] == 1 {
+		hosts := s.GetGroupHosts(groupId)
+		hostsMap := map[uint64]bool{}
+		for _, h := range hosts {
+			hostsMap[h.Id] = true
+		}
+		receivedEnoughInv := make(chan bool, 1)
+		invitations := map[uint64]bool{}
+		expectedResponse := len(hostsMap) / 2
+		go func() {
+			for invHost := range s.GroupInvitations[groupId] {
+				if _, isMember := hostsMap[invHost]; isMember {
+					invitations[invHost] = true
+					if len(invitations) > expectedResponse {
+						receivedEnoughInv <- true
+					}
+				}
+			}
+		}()
+		select {
+		case <-receivedEnoughInv:
+			group := s.GetGroupNTXN(groupId)
+			peer := &pb.Peer{
+				Id:         s.Id,
+				Group:      groupId,
+				Host:       s.Id,
+				NextIndex:  0,
+				MatchIndex: 0,
+			}
+			groupPeers := map[uint64]*pb.Peer{}
+			if err := s.DB.Update(func(txn *badger.Txn) error {
+				groupPeers = GetGroupPeersFromKV(txn, peer.Group)
+				return s.SavePeer(txn, peer)
+			}); err == nil {
+				groupPeers[s.Id] = peer
+				s.GroupsOnboard[peer.Group] = &RTGroupMeta{
+					Peer:       peer.Id,
+					Leader:     group.LeaderPeer,
+					Lock:       sync.RWMutex{},
+					GroupPeers: groupPeers,
+					Group:      group,
+				}
+			}
+			return nil
+		case <-time.After(30 * time.Second):
+			close(s.GroupInvitations[groupId])
+			delete(s.GroupInvitations, groupId)
+			return errors.New("receive invitation timeout")
+		}
+	} else {
 		return errors.New("remote error")
-	case 1:
-		// add self into the group
-
 	}
 }

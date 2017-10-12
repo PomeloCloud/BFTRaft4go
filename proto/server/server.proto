@@ -15,6 +15,7 @@ service BFTRaft {
     rpc GetGroupLeader(GroupId) returns (GroupLeader) {}
     rpc GetGroupContent (GroupId) returns (RaftGroup) {}
     rpc PullGroupLogs (PullGroupLogsResuest) returns (LogEntries) {}
+    rpc SendGroupInvitation(GroupInvitation) returns (Nothing) {}
 }
 
 message CommandRequest {
@@ -153,6 +154,17 @@ message NodeJoinGroupEntry {
 message GroupLeader{
     Host node = 1;
     bytes signature = 2;
+}
+
+message GroupInvitation {
+    uint64 group = 1;
+    uint64 leader = 2;
+    uint64 node = 3;
+    bytes signature = 4;
+}
+
+message RaftGroupNodes {
+    repeated Host nodes = 1;
 }
 
 message Nothing {}

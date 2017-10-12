@@ -16,6 +16,7 @@ import (
 	"log"
 	"sync"
 	"time"
+	"golang.org/x/tools/go/gcimporter15/testdata"
 )
 
 type Options struct {
@@ -32,6 +33,7 @@ type BFTRaftServer struct {
 	DB                *badger.DB
 	FuncReg           map[uint64]map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte
 	GroupsOnboard     map[uint64]*RTGroupMeta
+	GroupInvitations  map[uint64]chan uint64
 	Peers             *cache.Cache
 	Groups            *cache.Cache
 	Hosts             *cache.Cache
@@ -381,20 +383,12 @@ func GetPeersSignData(peers []*pb.Peer) []byte {
 	return signData
 }
 
+
+
 func (s *BFTRaftServer) GroupHosts(ctx context.Context, request *pb.GroupId) (*pb.GroupNodesResponse, error) {
 	// Outlet for group server memberships that contains all of the meta data on the network
 	// This API is intended to be invoked from any machine to any members in the cluster
-	result := []*pb.Host{}
-	s.DB.View(func(txn *badger.Txn) error {
-		nodes := []*pb.Host{}
-		peers := GetGroupPeersFromKV(txn, request.GroupId)
-		for _, peer := range peers {
-			node := s.GetHost(txn, peer.Host)
-			nodes = append(nodes, node)
-		}
-		result = nodes
-		return nil
-	})
+	result := s.GetGroupHosts(request.GroupId)
 	// signature should be optional for clients in case of the client don't know server public keys
 	return &pb.GroupNodesResponse{Nodes: result, Signature: s.Sign(utils.NodesSignData(result))}, nil
 }
@@ -490,6 +484,12 @@ func (s *BFTRaftServer) GetGroupLeader(ctx context.Context, req *pb.GroupId) (*p
 		}
 	})
 	return response, err
+}
+
+func (s *BFTRaftServer) SendGroupInvitation(ctx context.Context, inv *pb.GroupInvitation) (*pb.Nothing, error) {
+	// TODO: verify invitation signature
+	s.GroupInvitations[inv.Group] <- inv.Node
+	return &pb.Nothing{}, nil
 }
 
 func (s *BFTRaftServer) Sign(data []byte) []byte {
