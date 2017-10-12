@@ -1,14 +1,13 @@
 package server
 
 import (
+	"crypto/x509"
+	"errors"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"log"
-	"errors"
-	"context"
-	"crypto/x509"
 )
 
 const (
@@ -33,9 +32,9 @@ func (s *BFTRaftServer) SMRegHost(arg *[]byte, entry *pb.LogEntry) []byte {
 		node.Id = utils.HashPublicKeyBytes(node.PublicKey)
 		node.Online = true
 		nodeClient := pb.Host{
-			Id: node.Id,
+			Id:         node.Id,
 			ServerAddr: node.ServerAddr,
-			PublicKey: node.PublicKey,
+			PublicKey:  node.PublicKey,
 		}
 		s.DB.Update(func(txn *badger.Txn) error {
 			if err := s.SaveHost(txn, &node); err == nil {
@@ -57,13 +56,6 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 		node := entry.Command.ClientId
 		// this should be fine, a public key can use both for client and node
 		groupId := req.Group
-		if node == s.Id {
-			// skip if current node is the joined node
-			// when joined a groupId, the node should do all of
-			// those following things by itself after the log is replicated
-			return []byte{2}
-		}
-
 		peer := pb.Peer{
 			Id:         node,
 			Group:      groupId,
@@ -72,6 +64,15 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			MatchIndex: 0,
 		}
 		if err := s.DB.Update(func(txn *badger.Txn) error {
+			if s.GetHost(txn, node) == nil {
+				return errors.New("cannot find node")
+			}
+			if node == s.Id {
+				// skip if current node is the joined node
+				// when joined a groupId, the node should do all of
+				// those following things by itself after the log is replicated
+				return errors.New("join should be processed")
+			}
 			group := s.GetGroup(txn, groupId)
 			// check if this group exceeds it's replication
 			if len(GetGroupPeersFromKV(txn, groupId)) >= int(group.Replications) {
@@ -89,7 +90,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 		if meta, found := s.GroupsOnboard[groupId]; found {
 			meta.Lock.Lock()
 			defer meta.Lock.Unlock()
-			meta.GroupPeers[peer.Id] = &peer
+			meta.GroupPeers[node] = &peer
 		}
 		return []byte{1}
 	} else {
@@ -127,6 +128,14 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 	if group.Replications < 1 || group.Replications > 100 {
 		return []byte{0}
 	}
+	// generate peer
+	peer := pb.Peer{
+		Id:         hostId,
+		Group:      group.Id,
+		Host:       hostId,
+		NextIndex:  0,
+		MatchIndex: 0,
+	}
 	if err := s.DB.Update(func(txn *badger.Txn) error {
 		// the proposer will decide the id for the group, we need to check it's availability
 		if s.GetGroup(txn, group.Id) != nil {
@@ -137,14 +146,6 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 		group.LeaderPeer = hostId
 		if err := s.SaveGroup(txn, &group); err != nil {
 			return err
-		}
-		// generate peer
-		peer := pb.Peer{
-			Id: hostId,
-			Group: group.Id,
-			Host: hostId,
-			NextIndex: 0,
-			MatchIndex: 0,
 		}
 		if err := s.SavePeer(txn, &peer); err == nil {
 			return err
@@ -158,7 +159,7 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 	}
 }
 
-func (s BFTRaftServer) RegHost() error {
+func (s *BFTRaftServer) RegHost() error {
 	groupId := uint64(utils.ALPHA_GROUP)
 	publicKey := utils.PublicKeyFromPrivate(s.PrivateKey)
 	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
@@ -166,11 +167,11 @@ func (s BFTRaftServer) RegHost() error {
 		return err
 	}
 	host := pb.Host{
-		Id: s.Id,
-		LastSeen: 0,
-		Online: true,
+		Id:         s.Id,
+		LastSeen:   0,
+		Online:     true,
 		ServerAddr: s.Opts.Address,
-		PublicKey: publicKeyBytes,
+		PublicKey:  publicKeyBytes,
 	}
 	hostData, err := proto.Marshal(&host)
 	if err != nil {
@@ -185,5 +186,25 @@ func (s BFTRaftServer) RegHost() error {
 		return errors.New("remote error")
 	case 1:
 		return nil
+	}
+	return errors.New("unexpected")
+}
+
+func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
+	joinEntry := pb.NodeJoinGroupEntry{Group: groupId}
+	joinData, err := proto.Marshal(&joinEntry)
+	if err != nil {
+		return err
+	}
+	res, err := s.Client.ExecCommand(utils.ALPHA_GROUP, NODE_JOIN, joinData)
+	if err != nil {
+		return err
+	}
+	switch (*res)[0] {
+	case 0:
+		return errors.New("remote error")
+	case 1:
+		// add self into the group
+
 	}
 }
