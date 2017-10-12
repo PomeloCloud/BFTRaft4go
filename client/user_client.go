@@ -12,6 +12,7 @@ import (
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/patrickmn/go-cache"
+	"log"
 )
 
 type BFTRaftClient struct {
@@ -52,6 +53,7 @@ func NewClient(bootstraps []string, opts ClientOptions) (*BFTRaftClient, error) 
 
 func (brc *BFTRaftClient) RefreshAlphaNodes(bootstraps []string) {
 	nodes := utils.AlphaNodes(bootstraps)
+	log.Println("alpha nodes refreshed:", nodes)
 	for _, node := range nodes {
 		if c, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 			brc.AlphaRPCs = append(brc.AlphaRPCs, &c)
@@ -64,7 +66,7 @@ func (brc *BFTRaftClient) GetGroupHosts(groupId uint64) *[]*spb.Host {
 	if cached, found := brc.GroupHosts.Get(cacheKey); found {
 		return cached.(*[]*spb.Host)
 	}
-	hosts := utils.MajorityResponse(brc.AlphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
+	res := utils.MajorityResponse(brc.AlphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupHosts(
 			context.Background(), &spb.GroupId{GroupId: groupId},
 		); err == nil {
@@ -72,7 +74,11 @@ func (brc *BFTRaftClient) GetGroupHosts(groupId uint64) *[]*spb.Host {
 		} else {
 			return nil, []byte{}
 		}
-	}).(*[]*spb.Host)
+	})
+	var hosts *[]*spb.Host = nil
+	if res != nil {
+		hosts = res.(*[]*spb.Host)
+	}
 	if hosts != nil {
 		brc.GroupHosts.Set(cacheKey, hosts, cache.DefaultExpiration)
 	}

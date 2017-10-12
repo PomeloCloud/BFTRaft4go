@@ -12,13 +12,18 @@ func AlphaNodes(servers []string) []*spb.Host {
 			bootstrapServers = append(bootstrapServers, &c)
 		}
 	}
-	return MajorityResponse(bootstrapServers, func(c spb.BFTRaftClient) (interface{}, []byte) {
+	res := MajorityResponse(bootstrapServers, func(c spb.BFTRaftClient) (interface{}, []byte) {
 		if nodes, err := c.GroupHosts(context.Background(), &spb.GroupId{
 			GroupId: ALPHA_GROUP,
 		}); err == nil {
 			return nodes, NodesSignData(nodes.Nodes)
 		} else {
-			return nil, []byte{}
+			return (*spb.GroupNodesResponse)(nil), []byte{}
 		}
-	}).(*spb.GroupNodesResponse).Nodes
+	})
+	if res == nil {
+		return nil
+	} else {
+		return res.(*spb.GroupNodesResponse).Nodes
+	}
 }
