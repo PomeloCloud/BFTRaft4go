@@ -16,15 +16,13 @@ import (
 	"log"
 	"sync"
 	"time"
-	"golang.org/x/tools/go/gcimporter15/testdata"
 )
 
 type Options struct {
 	DBPath           string
 	Address          string
-	bootstrap        []string
+	Bootstrap        []string
 	ConsensusTimeout time.Duration
-	replications     uint32
 }
 
 type BFTRaftServer struct {
@@ -448,6 +446,9 @@ func (s *BFTRaftServer) PullGroupLogs(ctx context.Context, req *pb.PullGroupLogs
 }
 
 func (s *BFTRaftServer) RegisterRaftFunc(group uint64, func_id uint64, fn func(arg *[]byte, entry *pb.LogEntry) []byte) {
+	if _, found := s.FuncReg[group]; !found {
+		s.FuncReg[group] = map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte{}
+	}
 	s.FuncReg[group][func_id] = fn
 }
 
@@ -514,19 +515,23 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 	dbopt.ValueDir = serverOpts.DBPath
 	db, err := badger.Open(&dbopt)
 	if err != nil {
+		log.Panic(err)
 		return nil, err
 	}
 	config, err := GetConfig(db)
 	if err != nil {
+		log.Panic(err)
 		return nil, err
 	}
 	privateKey, err := utils.ParsePrivateKey(config.PrivateKey)
 	if err != nil {
+		log.Panic("error on parse key", config.PrivateKey, err)
 		return nil, err
 	}
 	id := utils.HashPublicKey(utils.PublicKeyFromPrivate(privateKey))
-	nclient, err := client.NewClient(serverOpts.bootstrap, client.ClientOptions{PrivateKey: config.PrivateKey})
+	nclient, err := client.NewClient(serverOpts.Bootstrap, client.ClientOptions{PrivateKey: config.PrivateKey})
 	if err != nil {
+		log.Panic(err)
 		return nil, err
 	}
 	bftRaftServer := BFTRaftServer{
@@ -541,6 +546,7 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
 		ClientPublicKeys:  cache.New(5*time.Minute, 1*time.Minute),
+		FuncReg:           map[uint64]map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte{},
 		Client:            nclient,
 		PrivateKey:        privateKey,
 	}
