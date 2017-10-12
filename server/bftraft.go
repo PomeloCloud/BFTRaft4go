@@ -34,6 +34,7 @@ type BFTRaftServer struct {
 	FuncReg           map[uint64]map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte
 	GroupsOnboard     map[uint64]*RTGroupMeta
 	GroupInvitations  map[uint64]chan uint64
+	PendingNewGroups  map[uint64]chan error
 	Peers             *cache.Cache
 	Groups            *cache.Cache
 	Hosts             *cache.Cache
@@ -451,7 +452,17 @@ func (s *BFTRaftServer) RegisterRaftFunc(group uint64, func_id uint64, fn func(a
 }
 
 func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_id uint64, group *pb.RaftGroup) {
-	group_peers := s.GroupsOnboard[group.Id].GroupPeers
+	meta := s.GroupsOnboard[group.Id]
+	if meta.IsBusy.IsSet() {
+		return
+	}
+	meta.IsBusy.Set()
+	meta.Lock.Lock()
+	defer func() {
+		meta.Lock.Unlock()
+		meta.IsBusy.UnSet()
+	}()
+	group_peers := meta.GroupPeers
 	host_peers := map[*pb.Peer]bool{}
 	for _, peer := range group_peers {
 		host_peers[peer] = true

@@ -10,6 +10,15 @@ import (
 
 func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 	meta, foundMeta := s.GroupsOnboard[groupId]
+	if meta.IsBusy.IsSet() {
+		return
+	}
+	meta.IsBusy.Set()
+	meta.Lock.Lock()
+	defer func() {
+		meta.Lock.Unlock()
+		meta.IsBusy.UnSet()
+	}()
 	if !foundMeta {
 		panic("meta not found for pull")
 	}

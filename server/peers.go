@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
-	"sync"
-	"github.com/PomeloCloud/BFTRaft4go/utils"
+	"github.com/tevino/abool"
 	"log"
+	"sync"
 )
 
 func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
@@ -35,7 +36,7 @@ func (s *BFTRaftServer) GetPeer(txn *badger.Txn, group uint64, peer_id uint64) *
 		return cachedPeer.(*pb.Peer)
 	}
 	dbKey := append(ComposeKeyPrefix(group, GROUP_PEERS), utils.U64Bytes(peer_id)...)
-	item, _:= txn.Get(dbKey)
+	item, _ := txn.Get(dbKey)
 	data := ItemValue(item)
 	if data == nil {
 		return nil
@@ -114,25 +115,25 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 			Entries:      entries,
 		})
 		if err == nil {
-				if utils.VerifySign(s.GetHostPublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
-					return
+			if utils.VerifySign(s.GetHostPublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
+				return
+			}
+			var lastEntry *pb.LogEntry
+			if len(entries) == 0 {
+				lastEntry = prevEntry
+			} else {
+				lastEntry = entries[len(entries)-1]
+			}
+			if appendResult.Index <= lastEntry.Index && appendResult.Term <= lastEntry.Term {
+				peer.MatchIndex = appendResult.Index
+				peer.NextIndex = peer.MatchIndex + 1
+				if s.DB.Update(func(txn *badger.Txn) error {
+					return s.SavePeer(txn, peer)
+				}) != nil {
+					log.Println(err)
 				}
-				var lastEntry *pb.LogEntry
-				if len(entries) == 0 {
-					lastEntry = prevEntry
-				} else {
-					lastEntry = entries[len(entries)-1]
-				}
-				if appendResult.Index <= lastEntry.Index && appendResult.Term <= lastEntry.Term {
-					peer.MatchIndex = appendResult.Index
-					peer.NextIndex = peer.MatchIndex + 1
-					if s.DB.Update(func(txn *badger.Txn) error {
-						return s.SavePeer(txn, peer)
-					}) != nil {
-						log.Println(err)
-					}
-				}
-				meta.VotesForEntries[meta.Peer] = appendResult.Convinced
+			}
+			meta.VotesForEntries[meta.Peer] = appendResult.Convinced
 		}
 	}
 }
@@ -175,6 +176,7 @@ func ScanHostedGroups(db *badger.DB, serverId uint64) map[uint64]*RTGroupMeta {
 						Lock:       sync.RWMutex{},
 						GroupPeers: GetGroupPeersFromKV(txn, peer.Group),
 						Group:      group,
+						IsBusy:     abool.NewBool(false),
 					}
 				}
 			}

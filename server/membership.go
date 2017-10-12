@@ -9,23 +9,24 @@ import (
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
+	"github.com/tevino/abool"
 	"log"
-	"time"
 	"sync"
+	"time"
 )
 
 const (
 	NODE_JOIN  = 0
 	REG_NODE   = 1
 	NEW_CLIENT = 2
-	NODE_GROUP = 3
+	NEW_GROUP  = 3
 )
 
 func (s *BFTRaftServer) RegisterMembershipCommands() {
 	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_JOIN, s.SMNodeJoin)
 	s.RegisterRaftFunc(utils.ALPHA_GROUP, REG_NODE, s.SMRegHost)
 	s.RegisterRaftFunc(utils.ALPHA_GROUP, NEW_CLIENT, s.SMNewClient)
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_GROUP, s.SMNewGroup)
+	s.RegisterRaftFunc(utils.ALPHA_GROUP, NEW_GROUP, s.SMNewGroup)
 }
 
 // Register a node into the network
@@ -35,14 +36,9 @@ func (s *BFTRaftServer) SMRegHost(arg *[]byte, entry *pb.LogEntry) []byte {
 	if err := proto.Unmarshal(*arg, &node); err == nil {
 		node.Id = utils.HashPublicKeyBytes(node.PublicKey)
 		node.Online = true
-		nodeClient := pb.Host{
-			Id:         node.Id,
-			ServerAddr: node.ServerAddr,
-			PublicKey:  node.PublicKey,
-		}
 		s.DB.Update(func(txn *badger.Txn) error {
 			if err := s.SaveHost(txn, &node); err == nil {
-				return s.SaveHost(txn, &nodeClient)
+				return nil
 			} else {
 				return err
 			}
@@ -176,7 +172,18 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 		}
 		return nil
 	}); err != nil {
-		return []byte{1}
+		if s.Id == hostId {
+			s.GroupsOnboard[peer.Group] = &RTGroupMeta{
+				Peer:       peer.Id,
+				Leader:     group.LeaderPeer,
+				Lock:       sync.RWMutex{},
+				GroupPeers: map[uint64]*pb.Peer{peer.Id: &peer},
+				Group:      &group,
+				IsBusy:     abool.NewBool(false),
+			}
+			s.PendingNewGroups[group.Id] <- nil
+		}
+		return utils.U64Bytes(entry.Index)
 	} else {
 		log.Println(err)
 		return []byte{0}
@@ -265,6 +272,7 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 					Lock:       sync.RWMutex{},
 					GroupPeers: groupPeers,
 					Group:      group,
+					IsBusy:     abool.NewBool(false),
 				}
 			}
 			return nil
@@ -272,6 +280,29 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 			close(s.GroupInvitations[groupId])
 			delete(s.GroupInvitations, groupId)
 			return errors.New("receive invitation timeout")
+		}
+	} else {
+		return errors.New("remote error")
+	}
+}
+
+func (s *BFTRaftServer) NewGroup(group *pb.RaftGroup) error {
+	groupData, err := proto.Marshal(group)
+	if err == nil {
+		return err
+	}
+	s.PendingNewGroups[group.Id] = make(chan error, 1)
+	res, err := s.Client.ExecCommand(utils.ALPHA_GROUP, NEW_GROUP, groupData)
+	if err == nil {
+		return err
+	}
+	if len(*res) > 1 {
+		// wait for the log to be committed
+		select {
+		case err := <-s.PendingNewGroups[group.Id]:
+			return err
+		case <-time.After(10 * time.Second):
+			return errors.New("timeout")
 		}
 	} else {
 		return errors.New("remote error")

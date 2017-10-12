@@ -28,6 +28,15 @@ func ResetTerm(meta *RTGroupMeta, term uint64) {
 }
 
 func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
+	if meta.IsBusy.IsSet() {
+		return
+	}
+	meta.IsBusy.Set()
+	meta.Lock.Lock()
+	defer func() {
+		meta.Lock.Unlock()
+		meta.IsBusy.UnSet()
+	}()
 	RefreshTimer(meta, 10)
 	meta.Role = CANDIDATE
 	group := meta.Group

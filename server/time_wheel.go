@@ -27,17 +27,17 @@ func (s *BFTRaftServer) StartTimingWheel() {
 							panic("Follower is leader")
 						}
 						// not leader
-						s.BecomeCandidate(meta)
+						go s.BecomeCandidate(meta)
 					} else if meta.Role == LEADER {
 						// is leader, send heartbeat
-						s.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
+						go s.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
 					} else if meta.Role == CANDIDATE {
 						// is candidate but vote expired, start a new vote term
-						s.BecomeCandidate(meta)
+						go s.BecomeCandidate(meta)
 					} else if meta.Role == OBSERVER {
 						// update local data
-						s.PullAndCommitGroupLogs(meta.Group.Id)
-						RefreshTimer(meta, 10)
+						go s.PullAndCommitGroupLogs(meta.Group.Id)
+						RefreshTimer(meta, 5)
 					}
 				}
 				meta.Lock.Unlock()

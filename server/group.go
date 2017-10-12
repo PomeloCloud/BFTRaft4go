@@ -2,14 +2,15 @@ package server
 
 import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
+	"github.com/tevino/abool"
+	"log"
 	"strconv"
 	"sync"
 	"time"
-	"log"
-	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 const (
@@ -30,6 +31,7 @@ type RTGroupMeta struct {
 	Role            int
 	Votes           []*pb.RequestVoteResponse
 	VotesForEntries map[uint64]bool // key is peer id
+	IsBusy          *abool.AtomicBool
 }
 
 func GetGroupFromKV(txn *badger.Txn, groupId uint64) *pb.RaftGroup {
@@ -92,7 +94,7 @@ func (s *BFTRaftServer) GetGroupLogLastIndex(txn *badger.Txn, groupId uint64) ui
 func (s *BFTRaftServer) GetGroupLogLastIndexNTXN(groupId uint64) uint64 {
 	var index uint64 = 0
 	s.DB.View(func(txn *badger.Txn) error {
-		index = s.GetGroupLogLastIndex(txn,  groupId)
+		index = s.GetGroupLogLastIndex(txn, groupId)
 		return nil
 	})
 	return index
@@ -113,10 +115,10 @@ func (s *BFTRaftServer) IncrGetGroupLogLastIndex(txn *badger.Txn, groupId uint64
 	} else {
 		log.Println(err)
 	}
-	return  0
+	return 0
 }
 
-func (s *BFTRaftServer)SetGroupLogLastIndex(txn *badger.Txn, groupId uint64, idx uint64) error  {
+func (s *BFTRaftServer) SetGroupLogLastIndex(txn *badger.Txn, groupId uint64, idx uint64) error {
 	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
 	return txn.Set(key, utils.U64Bytes(idx), 0x00)
 }
@@ -136,7 +138,7 @@ func (s *BFTRaftServer) SaveGroupNTXN(group *pb.RaftGroup) error {
 	})
 }
 
-func (s *BFTRaftServer)GetGroupHosts(groupId uint64 ) []*pb.Host   {
+func (s *BFTRaftServer) GetGroupHosts(groupId uint64) []*pb.Host {
 	result := []*pb.Host{}
 	s.DB.View(func(txn *badger.Txn) error {
 		nodes := []*pb.Host{}
