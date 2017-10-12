@@ -556,10 +556,11 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 	return &bftRaftServer, nil
 }
 
-func StartServer(server *BFTRaftServer) error {
-	server.StartTimingWheel()
-	pb.RegisterBFTRaftServer(utils.GetGRPCServer(server.Opts.Address), server)
-	return utils.GRPCServerListen(server.Opts.Address)
+func (s *BFTRaftServer)StartServer() error {
+	s.StartTimingWheel()
+	pb.RegisterBFTRaftServer(utils.GetGRPCServer(s.Opts.Address), s)
+	log.Println("Going to start s with id:", s.Id, "on:", s.Opts.Address)
+	return utils.GRPCServerListen(s.Opts.Address)
 }
 
 func InitDatabase(dbPath string) {

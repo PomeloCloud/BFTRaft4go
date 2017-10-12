@@ -6,6 +6,9 @@ import (
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/golang/protobuf/proto"
 	"github.com/dgraph-io/badger"
+	"log"
+	"sync"
+	"github.com/tevino/abool"
 )
 
 // Alpha group is a group specialized for tracking network members and groups
@@ -16,6 +19,39 @@ import (
 // It also provide valuable information for consistent hashing and distributed hash table implementations
 
 // This file contains all of the functions for cluster nodes to track changes in alpha group
+
+func (s *BFTRaftServer) ColdStart() {
+	// cloud start will assign the node as the only member in it's alpha group
+	alphaGroup := &spb.RaftGroup{
+		Id: utils.ALPHA_GROUP,
+		Replications: 32,
+		LeaderPeer: s.Id,
+		Term: 0,
+	}
+	thisPeer := &spb.Peer{
+		Id: s.Id,
+		Group: utils.ALPHA_GROUP,
+		Host: s.Id,
+		NextIndex: 0,
+		MatchIndex: 0,
+	}
+	if err := s.DB.Update(func(txn *badger.Txn) error {
+		if err := s.SaveGroup(txn, alphaGroup); err != nil {
+			return err
+		}
+		return s.SavePeer(txn, thisPeer)
+	}); err != nil {
+		log.Fatal("cannot save to cold start:", err)
+	}
+	s.GroupsOnboard[utils.ALPHA_GROUP] = &RTGroupMeta{
+		Peer:       thisPeer.Id,
+		Leader:     alphaGroup.LeaderPeer,
+		Lock:       sync.RWMutex{},
+		GroupPeers: map[uint64]*spb.Peer{},
+		Group:      alphaGroup,
+		IsBusy:     abool.NewBool(false),
+	}
+}
 
 func (s *BFTRaftServer) SyncAlphaGroup() {
 	// Force a snapshot sync for group members by asking alpha nodes for it
@@ -39,6 +75,8 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 		alphaPeersRes = res.(*spb.GroupPeersResponse)
 	}
 	if alphaPeersRes == nil {
+		log.Println("cannot get alpha peers, will try to cold start")
+		s.ColdStart()
 		return
 	}
 	peers := alphaPeersRes.Peers
@@ -82,6 +120,8 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 				}
 				return nil
 			})
+		} else {
+			log.Fatal("cannot generate alpha group from cluster")
 		}
 	}
 }
