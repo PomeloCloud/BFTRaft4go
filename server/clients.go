@@ -27,7 +27,7 @@ func (cs *ClientStore) Get(serverAddr string) (*Client, error) {
 	if cachedClient, cachedFound := cs.clients.Get(serverAddr); cachedFound {
 		return cachedClient.(*Client), nil
 	}
-	conn, err := grpc.Dial(serverAddr)
+	conn, err := grpc.Dial(serverAddr, grpc.WithInsecure())
 	if err != nil {
 		return nil, err
 	}

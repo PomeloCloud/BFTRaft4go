@@ -26,9 +26,13 @@ func LogEntryFromKVItem(item *badger.Item) *pb.LogEntry {
 }
 
 func (liter *LogEntryIterator) Next() *pb.LogEntry {
-	liter.data.Next()
-	if liter.data.ValidForPrefix(liter.prefix) {
-		return LogEntryFromKVItem(liter.data.Item())
+	if liter.data.Valid() {
+		liter.data.Next()
+		if liter.data.ValidForPrefix(liter.prefix) {
+			return LogEntryFromKVItem(liter.data.Item())
+		} else {
+			return nil
+		}
 	} else {
 		return nil
 	}

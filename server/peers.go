@@ -14,7 +14,7 @@ import (
 )
 
 func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
-	var peers map[uint64]*pb.Peer
+	peers := map[uint64]*pb.Peer{}
 	keyPrefix := ComposeKeyPrefix(group, GROUP_PEERS)
 	iter := txn.NewIterator(badger.IteratorOptions{})
 	iter.Seek(append(keyPrefix, utils.U64Bytes(0)...)) // seek the head
@@ -24,6 +24,7 @@ func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
 		peer := pb.Peer{}
 		proto.Unmarshal(*item_data, &peer)
 		peers[peer.Id] = &peer
+		iter.Next()
 	}
 	iter.Close()
 	return peers

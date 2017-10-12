@@ -9,6 +9,7 @@ import (
 	"log"
 	"sync"
 	"github.com/tevino/abool"
+	"crypto/x509"
 )
 
 // Alpha group is a group specialized for tracking network members and groups
@@ -35,11 +36,22 @@ func (s *BFTRaftServer) ColdStart() {
 		NextIndex: 0,
 		MatchIndex: 0,
 	}
+
+	thisHost := &spb.Host{
+		Id: s.Id,
+		LastSeen: 0,
+		Online: true,
+		ServerAddr: s.Opts.Address,
+	}
+	thisHost.PublicKey, _ = x509.MarshalPKIXPublicKey(utils.PublicKeyFromPrivate(s.PrivateKey))
 	if err := s.DB.Update(func(txn *badger.Txn) error {
 		if err := s.SaveGroup(txn, alphaGroup); err != nil {
 			return err
 		}
-		return s.SavePeer(txn, thisPeer)
+		if err := s.SavePeer(txn, thisPeer); err != nil {
+			return err
+		}
+		return s.SaveHost(txn, thisHost)
 	}); err != nil {
 		log.Fatal("cannot save to cold start:", err)
 	}
@@ -51,6 +63,7 @@ func (s *BFTRaftServer) ColdStart() {
 		Group:      alphaGroup,
 		IsBusy:     abool.NewBool(false),
 	}
+	s.Client.AlphaRPCs.ResetBootstrap([]string{s.Opts.Address})
 }
 
 func (s *BFTRaftServer) SyncAlphaGroup() {
@@ -96,8 +109,9 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 		// Nothing should be done here, the raft algorithm should take the rest
 	} else {
 		if group == nil {
+			log.Println("cannot find alpha group at local, will pull from remote")
 			// alpha group cannot be found, it need to be generated
-			group = utils.MajorityResponse(alphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
+			res := utils.MajorityResponse(alphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
 				if res, err := client.GetGroupContent(context.Background(), &spb.GroupId{GroupId: utils.ALPHA_GROUP}); err == nil {
 					if data, err2 := proto.Marshal(res); err2 == nil {
 						return res, data
@@ -105,14 +119,28 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 						return nil, []byte{}
 					}
 				} else {
+					log.Println(err)
 					return nil, []byte{}
 				}
-			}).(*spb.RaftGroup)
+			})
+			if res != nil {
+				group = res.(*spb.RaftGroup)
+				log.Println("pulled alpha group at term:", group.Term, "leader:", group.LeaderPeer)
+			} else {
+				log.Println("cannot get alpha group from cluster")
+			}
 		}
 		if group != nil {
-			group.Term = lastEntry.Term
+			var lastIndex uint64
+			if lastEntry == nil {
+				group.Term = 0
+				lastIndex = 0
+			} else {
+				group.Term = lastEntry.Index
+				lastIndex = lastEntry.Index
+			}
 			s.DB.Update(func(txn *badger.Txn) error {
-				s.SetGroupLogLastIndex(txn, utils.ALPHA_GROUP, lastEntry.Index)
+				s.SetGroupLogLastIndex(txn, utils.ALPHA_GROUP, lastIndex)
 				// the index will be used to observe changes
 				s.SaveGroup(txn, group)
 				for _, peer := range peers {

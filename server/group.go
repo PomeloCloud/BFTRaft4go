@@ -37,7 +37,7 @@ type RTGroupMeta struct {
 func GetGroupFromKV(txn *badger.Txn, groupId uint64) *pb.RaftGroup {
 	group := &pb.RaftGroup{}
 	keyPrefix := ComposeKeyPrefix(groupId, GROUP_META)
-	if item, err := txn.Get(keyPrefix); err != nil {
+	if item, err := txn.Get(keyPrefix); err == nil {
 		data := ItemValue(item)
 		if data == nil {
 			return nil
@@ -46,7 +46,6 @@ func GetGroupFromKV(txn *badger.Txn, groupId uint64) *pb.RaftGroup {
 			return group
 		}
 	} else {
-		log.Println(err)
 		return nil
 	}
 }
@@ -125,7 +124,7 @@ func (s *BFTRaftServer) SetGroupLogLastIndex(txn *badger.Txn, groupId uint64, id
 
 func (s *BFTRaftServer) SaveGroup(txn *badger.Txn, group *pb.RaftGroup) error {
 	if data, err := proto.Marshal(group); err == nil {
-		dbKey := append(ComposeKeyPrefix(group.Id, GROUP_META))
+		dbKey := ComposeKeyPrefix(group.Id, GROUP_META)
 		return txn.Set(dbKey, data, 0x00)
 	} else {
 		return err
@@ -145,7 +144,11 @@ func (s *BFTRaftServer) GetGroupHosts(groupId uint64) []*pb.Host {
 		peers := GetGroupPeersFromKV(txn, groupId)
 		for _, peer := range peers {
 			node := s.GetHost(txn, peer.Host)
-			nodes = append(nodes, node)
+			if node != nil {
+				nodes = append(nodes, node)
+			} else {
+				log.Println(s.Id, "cannot find group node:", peer.Id)
+			}
 		}
 		result = nodes
 		return nil

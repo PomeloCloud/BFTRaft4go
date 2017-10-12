@@ -13,12 +13,12 @@ func initDB(dbPath string, t *testing.T) {
 	InitDatabase(dbPath)
 }
 
-func getServer(dbPath string, addr string, t *testing.T) *BFTRaftServer {
+func getServer(dbPath string, addr string, bootstraps []string, t *testing.T) *BFTRaftServer {
 	initDB(dbPath, t)
 	s, err := GetServer(Options{
 		DBPath: dbPath,
 		Address: addr,
-		Bootstrap: []string{},
+		Bootstrap: bootstraps,
 		ConsensusTimeout: 1 * time.Minute,
 	})
 
@@ -30,19 +30,28 @@ func getServer(dbPath string, addr string, t *testing.T) *BFTRaftServer {
 
 func TestServerStartup(t *testing.T) {
 	dbPath := "test_data/ServerStartup"
-	s := getServer(dbPath, "localhost:4560", t)
+	s := getServer(dbPath, "localhost:4560", []string{}, t)
+	defer os.RemoveAll(dbPath)
 	go func() {
 		if err := s.StartServer(); err != nil {
 			t.Fatal(err)
 		}
 	}()
-	os.RemoveAll(dbPath)
 }
 
 func TestColdStart(t *testing.T) {
 	// test for creating a cold started node and add a member to join it
-	dbPath1 := "test_data/ServerStartup"
+	dbPath1 := "test_data/TestColdStart1"
+	dbPath2 := "test_data/TestColdStart2"
 	addr1 := "localhost:4561"
-	getServer(dbPath1, addr1, t)
-	os.RemoveAll(dbPath1)
+	addr2 := "localhost:4562"
+	defer os.RemoveAll(dbPath1)
+	defer os.RemoveAll(dbPath2)
+	println("start server 1")
+	s1 := getServer(dbPath1, addr1, []string{}, t)
+	go s1.StartServer()
+	println("start server 2")
+	time.Sleep(1 * time.Second)
+	s2 := getServer(dbPath2, addr2, []string{addr1}, t)
+	go s2.StartServer()
 }

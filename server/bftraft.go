@@ -389,7 +389,8 @@ func (s *BFTRaftServer) GroupHosts(ctx context.Context, request *pb.GroupId) (*p
 	// This API is intended to be invoked from any machine to any members in the cluster
 	result := s.GetGroupHosts(request.GroupId)
 	// signature should be optional for clients in case of the client don't know server public keys
-	return &pb.GroupNodesResponse{Nodes: result, Signature: s.Sign(utils.NodesSignData(result))}, nil
+	signature := s.Sign(utils.NodesSignData(result))
+	return &pb.GroupNodesResponse{Nodes: result, Signature: signature}, nil
 }
 
 func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupId) (*pb.GroupPeersResponse, error) {
@@ -412,7 +413,11 @@ func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupId) (*pb.Gr
 }
 
 func (s *BFTRaftServer) GetGroupContent(ctx context.Context, req *pb.GroupId) (*pb.RaftGroup, error) {
-	return s.GetGroupNTXN(req.GroupId), nil
+	group := s.GetGroupNTXN(req.GroupId)
+	if group == nil {
+		log.Println(s.Id, "cannot find group", req.GroupId)
+	}
+	return group, nil
 }
 
 // TODO: Signature
@@ -553,13 +558,14 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 	bftRaftServer.GroupsOnboard = ScanHostedGroups(db, id)
 	bftRaftServer.RegisterMembershipCommands()
 	bftRaftServer.SyncAlphaGroup()
+	log.Println("server generated:", bftRaftServer.Id)
 	return &bftRaftServer, nil
 }
 
 func (s *BFTRaftServer)StartServer() error {
 	s.StartTimingWheel()
 	pb.RegisterBFTRaftServer(utils.GetGRPCServer(s.Opts.Address), s)
-	log.Println("Going to start s with id:", s.Id, "on:", s.Opts.Address)
+	log.Println("going to start server with id:", s.Id, "on:", s.Opts.Address)
 	return utils.GRPCServerListen(s.Opts.Address)
 }
 
