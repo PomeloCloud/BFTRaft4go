@@ -12,7 +12,6 @@ import (
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/patrickmn/go-cache"
-	"log"
 )
 
 
@@ -49,12 +48,7 @@ func NewClient(bootstraps []string, opts ClientOptions) (*BFTRaftClient, error) 
 		GroupLeader: cache.New(1*time.Minute, 1*time.Minute),
 		Counter:     0,
 	}
-	bftclient.RefreshAlphaNodes(bootstraps)
 	return bftclient, nil
-}
-
-func (brc *BFTRaftClient) RefreshAlphaNodes(bootstraps []string) {
-
 }
 
 func (brc *BFTRaftClient) GetGroupHosts(groupId uint64) *[]*spb.Host {

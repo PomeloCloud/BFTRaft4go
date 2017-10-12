@@ -97,7 +97,7 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 	} else {
 		if group == nil {
 			// alpha group cannot be found, it need to be generated
-			group = utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
+			group = utils.MajorityResponse(alphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
 				if res, err := client.GetGroupContent(context.Background(), &spb.GroupId{GroupId: utils.ALPHA_GROUP}); err == nil {
 					if data, err2 := proto.Marshal(res); err2 == nil {
 						return res, data
