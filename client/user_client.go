@@ -15,10 +15,12 @@ import (
 	"log"
 )
 
+
+
 type BFTRaftClient struct {
 	Id          uint64
 	PrivateKey  *rsa.PrivateKey
-	AlphaRPCs   []*spb.BFTRaftClient
+	AlphaRPCs   AlphaRPCsCache
 	GroupHosts  *cache.Cache
 	GroupLeader *cache.Cache
 	CmdResChan  map[uint64]map[uint64]chan []byte
@@ -42,7 +44,7 @@ func NewClient(bootstraps []string, opts ClientOptions) (*BFTRaftClient, error) 
 		Id:          utils.HashPublicKey(publicKey),
 		PrivateKey:  privateKey,
 		Lock:        sync.RWMutex{},
-		AlphaRPCs:   []*spb.BFTRaftClient{},
+		AlphaRPCs:   NewAlphaRPCsCache(bootstraps),
 		GroupHosts:  cache.New(1*time.Minute, 1*time.Minute),
 		GroupLeader: cache.New(1*time.Minute, 1*time.Minute),
 		Counter:     0,
@@ -52,13 +54,7 @@ func NewClient(bootstraps []string, opts ClientOptions) (*BFTRaftClient, error) 
 }
 
 func (brc *BFTRaftClient) RefreshAlphaNodes(bootstraps []string) {
-	nodes := utils.AlphaNodes(bootstraps)
-	log.Println("alpha nodes refreshed:", nodes)
-	for _, node := range nodes {
-		if c, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
-			brc.AlphaRPCs = append(brc.AlphaRPCs, &c)
-		}
-	}
+
 }
 
 func (brc *BFTRaftClient) GetGroupHosts(groupId uint64) *[]*spb.Host {
@@ -66,7 +62,7 @@ func (brc *BFTRaftClient) GetGroupHosts(groupId uint64) *[]*spb.Host {
 	if cached, found := brc.GroupHosts.Get(cacheKey); found {
 		return cached.(*[]*spb.Host)
 	}
-	res := utils.MajorityResponse(brc.AlphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
+	res := utils.MajorityResponse(brc.AlphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupHosts(
 			context.Background(), &spb.GroupId{GroupId: groupId},
 		); err == nil {
@@ -90,7 +86,7 @@ func (brc *BFTRaftClient) GetGroupLeader(groupId uint64) spb.BFTRaftClient {
 	if cached, found := brc.GroupLeader.Get(cacheKey); found {
 		return cached.(spb.BFTRaftClient)
 	}
-	leaderHost := utils.MajorityResponse(brc.AlphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
+	leaderHost := utils.MajorityResponse(brc.AlphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GetGroupLeader(
 			context.Background(), &spb.GroupId{GroupId: groupId},
 		); err == nil {

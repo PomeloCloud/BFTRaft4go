@@ -59,7 +59,7 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 	// First we need to get all alpha nodes
 	alphaRPCs := s.Client.AlphaRPCs
 	// get alpha peers from alpha nodes
-	res := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
+	res := utils.MajorityResponse(alphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupPeers(context.Background(), &spb.GroupId{
 			GroupId: utils.ALPHA_GROUP,
 		}); err == nil {
