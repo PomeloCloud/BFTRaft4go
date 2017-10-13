@@ -98,7 +98,7 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 	if node == nil {
 		return
 	}
-	if client, err := utils.GetClusterRPC(node.ServerAddr); err != nil {
+	if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 		votes := []*pb.RequestVoteResponse{}
 		if meta.VotesForEntries[meta.Peer] {
 			votes = meta.Votes

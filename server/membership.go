@@ -88,8 +88,6 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 		// because membership logs entries will be replicated on every node
 		// this function will also be executed every where
 		if meta, found := s.GroupsOnboard[groupId]; found {
-			meta.Lock.Lock()
-			defer meta.Lock.Unlock()
 			address := s.GetHostNTXN(entry.Command.ClientId).ServerAddr
 			inv := &pb.GroupInvitation{
 				Group:  groupId,
@@ -97,7 +95,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 				Node:   meta.Peer,
 			}
 			inv.Signature = s.Sign(InvitationSignature(inv))
-			if client, err := utils.GetClusterRPC(address); err != nil {
+			if client, err := utils.GetClusterRPC(address); err == nil {
 				go client.SendGroupInvitation(context.Background(), inv)
 				s.GroupsOnboard[groupId].GroupPeers[peer.Id] = &peer
 				return []byte{1}
@@ -107,6 +105,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			}
 			meta.GroupPeers[node] = &peer
 		}
+		log.Println("we have new node ", node, "join group", groupId)
 		return []byte{1}
 	} else {
 		log.Println(err)
@@ -123,7 +122,7 @@ func (s *BFTRaftServer) SMNewClient(arg *[]byte, entry *pb.LogEntry) []byte {
 		return []byte{0}
 	}
 	client.Id = utils.HashPublicKeyBytes(client.PublicKey)
-	if err := s.SaveHostNTXN(&client); err != nil {
+	if err := s.SaveHostNTXN(&client); err == nil {
 		return []byte{1}
 	} else {
 		log.Println(err)
@@ -171,7 +170,7 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 			return err
 		}
 		return nil
-	}); err != nil {
+	}); err == nil {
 		if s.Id == hostId {
 			s.GroupsOnboard[peer.Group] = &RTGroupMeta{
 				Peer:       peer.Id,
@@ -181,7 +180,9 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 				Group:      &group,
 				IsBusy:     abool.NewBool(false),
 			}
-			s.PendingNewGroups[group.Id] <- nil
+			go func() {
+				s.PendingNewGroups[group.Id] <- nil
+			}()
 		}
 		return utils.U64Bytes(entry.Index)
 	} else {
@@ -228,6 +229,7 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 	if err != nil {
 		return err
 	}
+	s.GroupInvitations[groupId] = make(chan uint64)
 	res, err := s.Client.ExecCommand(utils.ALPHA_GROUP, NODE_JOIN, joinData)
 	if err != nil {
 		return err
@@ -276,6 +278,7 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 					IsBusy:     abool.NewBool(false),
 				}
 			}
+			log.Println("node ", peer.Id, "joined group", groupId)
 			return nil
 		case <-time.After(30 * time.Second):
 			close(s.GroupInvitations[groupId])

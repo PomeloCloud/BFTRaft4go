@@ -30,7 +30,9 @@ func (s *BFTRaftServer) SetLogAppended(groupId uint64, logIndex uint64, isApprov
 	s.prepareApproveChan(groupId, logIndex)
 	cache_key := fmt.Sprint(groupId, "-", logIndex)
 	if c, existed := s.GroupAppendedLogs.Get(cache_key); existed {
-		c.(chan bool) <- isApproved
+		go func() {
+			c.(chan bool) <- isApproved
+		}()
 	}
 }
 

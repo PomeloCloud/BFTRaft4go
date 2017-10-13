@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 	"os"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 func initDB(dbPath string, t *testing.T) {
@@ -57,5 +58,5 @@ func TestColdStart(t *testing.T) {
 	s2 := getServer(dbPath2, addr2, []string{addr1}, t)
 	s2.StartServer()
 	time.Sleep(1 * time.Second)
-	s2.NodeJoin(1)
+	s2.NodeJoin(utils.ALPHA_GROUP)
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"hash/fnv"
+	"time"
 )
 
 type FuncResult struct {
@@ -50,20 +51,25 @@ func PickMajority(hashes []uint64) uint64 {
 func MajorityResponse(clients []*spb.BFTRaftClient, f func(client spb.BFTRaftClient) (interface{}, []byte)) interface{} {
 	serverResChan := make(chan FuncResult)
 	for _, c := range clients {
-		if c == nil {
-			serverResChan <- FuncResult{
-				result:  nil,
-				feature: []byte{0},
-			}
-		} else {
-			go func() {
-				res, fea := f(*c)
-				serverResChan <- FuncResult{
-					result:  res,
-					feature: fea,
+		go func() {
+			var res interface{} = nil
+			fea := []byte{0}
+			if c != nil {
+				dataReceived := make(chan bool)
+				go func() {
+					res, fea = f(*c)
+					dataReceived <- true
+				}()
+				select {
+				case <-dataReceived:
+				case <-time.After(10 * time.Second):
 				}
-			}()
-		}
+			}
+			serverResChan <- FuncResult{
+				result:  res,
+				feature: fea,
+			}
+		}()
 	}
 	hashes := []uint64{}
 	vals := map[uint64]interface{}{}

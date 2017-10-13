@@ -35,7 +35,7 @@ func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 	}
 	// Pull entries
 	entries := utils.MajorityResponse(peerClients, func(client pb.BFTRaftClient) (interface{}, []byte) {
-		if entriesRes, err := client.PullGroupLogs(context.Background(), req); err != nil {
+		if entriesRes, err := client.PullGroupLogs(context.Background(), req); err == nil {
 			entries := entriesRes.Entries
 			if len(entries) == 0 {
 				return entries, []byte{1}

@@ -74,7 +74,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			isRegNewNode = true
 		}
 		if leader_node.Id != s.Id {
-			if client, err := utils.GetClusterRPC(leader_node.ServerAddr); err != nil {
+			if client, err := utils.GetClusterRPC(leader_node.ServerAddr); err == nil {
 				return client.ExecCommand(ctx, cmd)
 			}
 		} else if isRegNewNode || s.VerifyCommandSign(cmd) { // the node is the leader to this group
@@ -222,7 +222,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 								response.Hash = entry.Hash
 								response.Signature = s.Sign(entry.Hash)
 								go func() {
-									if approveRes, err := client.ApproveAppend(ctx, response); err != nil {
+									if approveRes, err := client.ApproveAppend(ctx, response); err == nil {
 										if utils.VerifySign(
 											s.GetHostPublicKey(node.Id),
 											approveRes.Signature,
@@ -389,8 +389,6 @@ func GetPeersSignData(peers []*pb.Peer) []byte {
 	return signData
 }
 
-
-
 func (s *BFTRaftServer) GroupHosts(ctx context.Context, request *pb.GroupId) (*pb.GroupNodesResponse, error) {
 	// Outlet for group server memberships that contains all of the meta data on the network
 	// This API is intended to be invoked from any machine to any members in the cluster
@@ -510,7 +508,9 @@ func (s *BFTRaftServer) GetGroupLeader(ctx context.Context, req *pb.GroupId) (*p
 
 func (s *BFTRaftServer) SendGroupInvitation(ctx context.Context, inv *pb.GroupInvitation) (*pb.Nothing, error) {
 	// TODO: verify invitation signature
-	s.GroupInvitations[inv.Group] <- inv.Node
+	go func() {
+		s.GroupInvitations[inv.Group] <- inv.Node
+	}()
 	return &pb.Nothing{}, nil
 }
 
@@ -556,6 +556,7 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
 		ClientPublicKeys:  cache.New(5*time.Minute, 1*time.Minute),
+		GroupInvitations:  map[uint64]chan uint64{},
 		FuncReg:           map[uint64]map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte{},
 		Client:            nclient,
 		PrivateKey:        privateKey,
@@ -567,7 +568,7 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 	return &bftRaftServer, nil
 }
 
-func (s *BFTRaftServer)StartServer() error {
+func (s *BFTRaftServer) StartServer() error {
 	s.StartTimingWheel()
 	pb.RegisterBFTRaftServer(utils.GetGRPCServer(s.Opts.Address), s)
 	log.Println("going to start server with id:", s.Id, "on:", s.Opts.Address)

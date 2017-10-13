@@ -96,7 +96,7 @@ func (brc *BFTRaftClient) GetGroupLeader(groupId uint64) spb.BFTRaftClient {
 	}
 	if leaderHost != nil {
 		if leader, err := utils.GetClusterRPC(leaderHost.ServerAddr); err == nil {
-			brc.GroupHosts.Set(cacheKey, leader, cache.DefaultExpiration)
+			brc.GroupLeader.Set(cacheKey, leader, cache.DefaultExpiration)
 			return leader
 		}
 	} else {
@@ -132,7 +132,9 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 		// TODO: verify signature
 		// TODO: update leader if needed
 		// TODO: verify response matches request
-		brc.CmdResChan[groupId][reqId] <- cmdRes.Result
+		go func() {
+			brc.CmdResChan[groupId][reqId] <- cmdRes.Result
+		}()
 	}
 	expectedResponse := len(*brc.GetGroupHosts(groupId)) / 2
 	responseReceived := map[uint64][]byte{}
