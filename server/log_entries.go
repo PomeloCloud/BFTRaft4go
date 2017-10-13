@@ -8,6 +8,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
+	"log"
 )
 
 type LogEntryIterator struct {
@@ -98,22 +99,23 @@ func (s *BFTRaftServer) AppendEntryToLocal(txn *badger.Txn, group *pb.RaftGroup,
 	group_id := entry.Command.Group
 	key := LogEntryKey(group_id, entry.Index)
 	_, err := txn.Get(key)
-	if err != nil {
-		return err
-	} else if err == badger.ErrKeyNotFound {
+	if err == badger.ErrKeyNotFound {
 		cmd := entry.Command
 		hash, _ := utils.LogHash(s.LastEntryHash(txn, group_id), entry.Index, cmd.FuncId, cmd.Arg)
 		if !bytes.Equal(hash, entry.Hash) {
 			return errors.New("Log entry hash mismatch")
 		}
-		if data, err := proto.Marshal(entry); err != nil {
+		if data, err := proto.Marshal(entry); err == nil {
 			txn.Set(key, data, 0x00)
 			return nil
 		} else {
+			log.Println("cannot append log to local:", err)
 			return err
 		}
+	} else if err == nil {
+		return errors.New("log existed")
 	} else {
-		return nil
+		return err
 	}
 }
 

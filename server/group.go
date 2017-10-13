@@ -103,16 +103,15 @@ func (s *BFTRaftServer) IncrGetGroupLogLastIndex(txn *badger.Txn, groupId uint64
 	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
 	if item, err := txn.Get(key); err == nil {
 		data := ItemValue(item)
-		var idx uint64 = 0
-		if data != nil {
-			idx = utils.BytesU64(*data, 0)
-		}
+		idx := utils.BytesU64(*data, 0)
 		idx += 1
 		if txn.Set(key, utils.U64Bytes(idx), 0x00) == nil {
 			return idx
 		}
-	} else {
-		log.Println(err)
+	} else if err == badger.ErrKeyNotFound {
+		if txn.Set(key, utils.U64Bytes(1), 0x00) == nil {
+			return 1
+		}
 	}
 	return 0
 }

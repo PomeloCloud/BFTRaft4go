@@ -26,6 +26,7 @@ func AlphaNodes(servers []string) []*spb.Host {
 	if res == nil {
 		return nil
 	} else {
-		return res.(*spb.GroupNodesResponse).Nodes
+		response := res.(*spb.GroupNodesResponse)
+		return response.Nodes
 	}
 }

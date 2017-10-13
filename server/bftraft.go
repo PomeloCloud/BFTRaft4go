@@ -66,11 +66,18 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 		return response, nil
 	}
 	if leader_node := s.GetHostNTXN(leader_peer.Host); leader_node != nil {
+		isRegNewNode := false
+		log.Println("Executing command group:", cmd.Group, "func:", cmd.FuncId, "client:", cmd.ClientId)
+		if s.GetHostNTXN(cmd.ClientId) == nil && cmd.Group == utils.ALPHA_GROUP && cmd.FuncId == REG_NODE {
+			// if registering new node, we should skip the signature verification
+			log.Println("Cannot find node and it's trying to register")
+			isRegNewNode = true
+		}
 		if leader_node.Id != s.Id {
 			if client, err := utils.GetClusterRPC(leader_node.ServerAddr); err != nil {
 				return client.ExecCommand(ctx, cmd)
 			}
-		} else if s.VerifyCommandSign(cmd) { // the node is the leader to this group
+		} else if isRegNewNode || s.VerifyCommandSign(cmd) { // the node is the leader to this group
 			groupMeta := s.GroupsOnboard[group_id]
 			response.LeaderId = leader_peer.Id
 			groupMeta.Lock.Lock()
@@ -90,7 +97,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				return s.AppendEntryToLocal(txn, group, &logEntry)
 			}); err == nil {
 				s.SendFollowersHeartbeat(ctx, leader_peer_id, group)
-				if s.WaitLogApproved(group_id, index) {
+				if len(groupMeta.GroupPeers) < 2 || s.WaitLogApproved(group_id, index) {
 					response.Result = *s.CommitGroupLog(group_id, &logEntry)
 				}
 			}
@@ -463,9 +470,7 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 		return
 	}
 	meta.IsBusy.Set()
-	meta.Lock.Lock()
 	defer func() {
-		meta.Lock.Unlock()
 		meta.IsBusy.UnSet()
 	}()
 	group_peers := meta.GroupPeers
@@ -566,7 +571,10 @@ func (s *BFTRaftServer)StartServer() error {
 	s.StartTimingWheel()
 	pb.RegisterBFTRaftServer(utils.GetGRPCServer(s.Opts.Address), s)
 	log.Println("going to start server with id:", s.Id, "on:", s.Opts.Address)
-	return utils.GRPCServerListen(s.Opts.Address)
+	go utils.GRPCServerListen(s.Opts.Address)
+	time.Sleep(1 * time.Second)
+	s.RegHost()
+	return nil
 }
 
 func InitDatabase(dbPath string) {

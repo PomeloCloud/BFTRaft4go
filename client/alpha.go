@@ -24,7 +24,6 @@ func (arc *AlphaRPCsCache) Get() []*spb.BFTRaftClient {
 	defer arc.lock.Unlock()
 	if len(arc.rpcs) < 1 || time.Now().After(arc.lastCheck.Add(5*time.Minute)) {
 		nodes := utils.AlphaNodes(arc.bootstraps)
-		log.Println("alpha nodes refreshed:", nodes)
 		arc.rpcs = []*spb.BFTRaftClient{}
 		bootstraps := []string{}
 		for _, node := range nodes {
@@ -37,6 +36,7 @@ func (arc *AlphaRPCsCache) Get() []*spb.BFTRaftClient {
 			arc.ResetBootstrap(bootstraps)
 		}
 		arc.lastCheck = time.Now()
+		log.Println("alpha nodes refreshed:", len(arc.rpcs))
 	}
 	return arc.rpcs
 }

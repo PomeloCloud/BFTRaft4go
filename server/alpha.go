@@ -36,7 +36,6 @@ func (s *BFTRaftServer) ColdStart() {
 		NextIndex: 0,
 		MatchIndex: 0,
 	}
-
 	thisHost := &spb.Host{
 		Id: s.Id,
 		LastSeen: 0,
@@ -59,7 +58,7 @@ func (s *BFTRaftServer) ColdStart() {
 		Peer:       thisPeer.Id,
 		Leader:     alphaGroup.LeaderPeer,
 		Lock:       sync.RWMutex{},
-		GroupPeers: map[uint64]*spb.Peer{},
+		GroupPeers: map[uint64]*spb.Peer{thisPeer.Id: thisPeer},
 		Group:      alphaGroup,
 		IsBusy:     abool.NewBool(false),
 	}

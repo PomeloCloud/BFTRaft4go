@@ -222,6 +222,7 @@ func (s *BFTRaftServer) RegHost() error {
 }
 
 func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
+	log.Println(s.Id, ": Join group:", groupId)
 	joinEntry := pb.NodeJoinGroupEntry{Group: groupId}
 	joinData, err := proto.Marshal(&joinEntry)
 	if err != nil {

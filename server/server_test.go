@@ -45,13 +45,17 @@ func TestColdStart(t *testing.T) {
 	dbPath2 := "test_data/TestColdStart2"
 	addr1 := "localhost:4561"
 	addr2 := "localhost:4562"
+	os.RemoveAll(dbPath1)
+	os.RemoveAll(dbPath2)
 	defer os.RemoveAll(dbPath1)
 	defer os.RemoveAll(dbPath2)
 	println("start server 1")
 	s1 := getServer(dbPath1, addr1, []string{}, t)
-	go s1.StartServer()
+	s1.StartServer()
 	println("start server 2")
 	time.Sleep(1 * time.Second)
 	s2 := getServer(dbPath2, addr2, []string{addr1}, t)
-	go s2.StartServer()
+	s2.StartServer()
+	time.Sleep(1 * time.Second)
+	s2.NodeJoin(1)
 }

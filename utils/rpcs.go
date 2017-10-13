@@ -5,6 +5,7 @@ import (
 	"google.golang.org/grpc"
 	"net"
 	"sync"
+	"log"
 )
 
 var RPCServers map[string]*grpc.Server = map[string]*grpc.Server{}
@@ -33,6 +34,7 @@ func GetGRPCServer(addr string) *grpc.Server {
 func GRPCServerListen(addr string) error {
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
+		log.Println("RPC Server Listen:", addr, "Error:", err)
 		return err
 	}
 	return GetGRPCServer(addr).Serve(lis)

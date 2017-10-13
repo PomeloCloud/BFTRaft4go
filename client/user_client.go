@@ -12,9 +12,8 @@ import (
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/patrickmn/go-cache"
+	"log"
 )
-
-
 
 type BFTRaftClient struct {
 	Id          uint64
@@ -46,6 +45,7 @@ func NewClient(bootstraps []string, opts ClientOptions) (*BFTRaftClient, error) 
 		AlphaRPCs:   NewAlphaRPCsCache(bootstraps),
 		GroupHosts:  cache.New(1*time.Minute, 1*time.Minute),
 		GroupLeader: cache.New(1*time.Minute, 1*time.Minute),
+		CmdResChan:  map[uint64]map[uint64]chan []byte{},
 		Counter:     0,
 	}
 	return bftclient, nil
@@ -80,21 +80,27 @@ func (brc *BFTRaftClient) GetGroupLeader(groupId uint64) spb.BFTRaftClient {
 	if cached, found := brc.GroupLeader.Get(cacheKey); found {
 		return cached.(spb.BFTRaftClient)
 	}
-	leaderHost := utils.MajorityResponse(brc.AlphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
+	res := utils.MajorityResponse(brc.AlphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GetGroupLeader(
 			context.Background(), &spb.GroupId{GroupId: groupId},
 		); err == nil {
 			// TODO: verify signature
-			return &res.Node, []byte(res.Node.ServerAddr)
+			return res.Node, []byte(res.Node.ServerAddr)
 		} else {
 			return nil, []byte{}
 		}
-	}).(*spb.Host)
+	})
+	var leaderHost *spb.Host = nil
+	if res != nil {
+		leaderHost = res.(*spb.Host)
+	}
 	if leaderHost != nil {
 		if leader, err := utils.GetClusterRPC(leaderHost.ServerAddr); err == nil {
 			brc.GroupHosts.Set(cacheKey, leader, cache.DefaultExpiration)
 			return leader
 		}
+	} else {
+		log.Println("group", groupId, "has no leader")
 	}
 	return nil
 }
@@ -114,6 +120,9 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 	}
 	signData := utils.ExecCommandSignData(cmdReq)
 	cmdReq.Signature = utils.Sign(brc.PrivateKey, signData)
+	if _, found := brc.CmdResChan[groupId]; !found {
+		brc.CmdResChan[groupId] = map[uint64]chan []byte{}
+	}
 	brc.CmdResChan[groupId][reqId] = make(chan []byte)
 	defer func() {
 		close(brc.CmdResChan[groupId][reqId])
