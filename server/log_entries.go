@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/pkg/errors"
-	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"log"
 )
 
@@ -26,14 +26,18 @@ func LogEntryFromKVItem(item *badger.Item) *pb.LogEntry {
 	return &entry
 }
 
+func (liter *LogEntryIterator) Current() *pb.LogEntry {
+	if liter.data.ValidForPrefix(liter.prefix) {
+		return LogEntryFromKVItem(liter.data.Item())
+	} else {
+		return nil
+	}
+}
+
 func (liter *LogEntryIterator) Next() *pb.LogEntry {
 	if liter.data.Valid() {
 		liter.data.Next()
-		if liter.data.ValidForPrefix(liter.prefix) {
-			return LogEntryFromKVItem(liter.data.Item())
-		} else {
-			return nil
-		}
+		return liter.Current()
 	} else {
 		return nil
 	}
@@ -55,7 +59,7 @@ func (s *BFTRaftServer) ReversedLogIterator(txn *badger.Txn, group uint64) LogEn
 
 func (s *BFTRaftServer) LastLogEntry(txn *badger.Txn, group uint64) *pb.LogEntry {
 	iter := s.ReversedLogIterator(txn, group)
-	entry := iter.Next()
+	entry := iter.Current()
 	iter.Close()
 	return entry
 }
@@ -64,7 +68,7 @@ func (s *BFTRaftServer) LastLogEntryNTXN(group uint64) *pb.LogEntry {
 	entry := &pb.LogEntry{}
 	s.DB.View(func(txn *badger.Txn) error {
 		iter := s.ReversedLogIterator(txn, group)
-		entry = iter.Next()
+		entry = iter.Current()
 		iter.Close()
 		return nil
 	})
@@ -80,6 +84,24 @@ func (s *BFTRaftServer) LastEntryHash(txn *badger.Txn, group_id uint64) []byte {
 		hash = lastLog.Hash
 	}
 	return hash
+}
+
+func (s *BFTRaftServer) LastEntryIndex(txn *badger.Txn, groupId uint64) uint64 {
+	lastLog := s.LastLogEntry(txn, groupId)
+	index := uint64(0)
+	if lastLog != nil {
+		index = lastLog.Index
+	}
+	return index
+}
+
+func (s *BFTRaftServer) LastEntryIndexNTXN(groupId uint64) uint64 {
+	index := uint64(0)
+	s.DB.View(func(txn *badger.Txn) error {
+		index = s.LastEntryIndex(txn, groupId)
+		return nil
+	})
+	return index
 }
 
 func (s *BFTRaftServer) LastEntryHashNTXN(group_id uint64) []byte {

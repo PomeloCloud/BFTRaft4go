@@ -2,7 +2,6 @@ package server
 
 import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
-	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
@@ -94,52 +93,6 @@ func (s *BFTRaftServer) GetGroupNTXN(groupId uint64) *pb.RaftGroup {
 		return nil
 	})
 	return group
-}
-
-func (s *BFTRaftServer) GetGroupLogLastIndex(txn *badger.Txn, groupId uint64) uint64 {
-	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
-	if item, err := txn.Get(key); err == nil {
-		data := ItemValue(item)
-		var idx uint64 = 0
-		if data != nil {
-			idx = utils.BytesU64(*data, 0)
-		}
-		return idx
-	} else {
-		log.Println(err)
-		return 0
-	}
-}
-
-func (s *BFTRaftServer) GetGroupLogLastIndexNTXN(groupId uint64) uint64 {
-	var index uint64 = 0
-	s.DB.View(func(txn *badger.Txn) error {
-		index = s.GetGroupLogLastIndex(txn, groupId)
-		return nil
-	})
-	return index
-}
-
-func (s *BFTRaftServer) IncrGetGroupLogLastIndex(txn *badger.Txn, groupId uint64) uint64 {
-	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
-	if item, err := txn.Get(key); err == nil {
-		data := ItemValue(item)
-		idx := utils.BytesU64(*data, 0)
-		idx += 1
-		if txn.Set(key, utils.U64Bytes(idx), 0x00) == nil {
-			return idx
-		}
-	} else if err == badger.ErrKeyNotFound {
-		if txn.Set(key, utils.U64Bytes(1), 0x00) == nil {
-			return 1
-		}
-	}
-	return 0
-}
-
-func (s *BFTRaftServer) SetGroupLogLastIndex(txn *badger.Txn, groupId uint64, idx uint64) error {
-	key := ComposeKeyPrefix(groupId, GROUP_LAST_IDX)
-	return txn.Set(key, utils.U64Bytes(idx), 0x00)
 }
 
 func (s *BFTRaftServer) SaveGroup(txn *badger.Txn, group *pb.RaftGroup) error {

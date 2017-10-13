@@ -125,16 +125,12 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 			}
 		}
 		if group != nil {
-			var lastIndex uint64
 			if lastEntry == nil {
 				group.Term = 0
-				lastIndex = 0
 			} else {
 				group.Term = lastEntry.Index
-				lastIndex = lastEntry.Index
 			}
 			s.DB.Update(func(txn *badger.Txn) error {
-				s.SetGroupLogLastIndex(txn, utils.ALPHA_GROUP, lastIndex)
 				// the index will be used to observe changes
 				s.SaveGroup(txn, group)
 				for _, member := range members {

@@ -86,7 +86,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			var hash []byte
 			var logEntry pb.LogEntry
 			if err := s.DB.Update(func(txn *badger.Txn) error {
-				index = s.IncrGetGroupLogLastIndex(txn, group_id)
+				index := s.LastEntryIndex(txn, group_id) + 1
 				hash, _ = utils.LogHash(s.LastEntryHash(txn, group_id), index, cmd.FuncId, cmd.Arg)
 				logEntry = pb.LogEntry{
 					Term:    group.Term,
@@ -100,6 +100,8 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				if len(groupMeta.GroupPeers) < 2 || s.WaitLogApproved(group_id, index) {
 					response.Result = *s.CommitGroupLog(group_id, &logEntry)
 				}
+			} else {
+				log.Println("Append entry on leader failed:", err)
 			}
 		}
 	}
@@ -124,7 +126,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	response := &pb.AppendEntriesResponse{
 		Group:     groupId,
 		Term:      group.Term,
-		Index:     s.GetGroupLogLastIndexNTXN(groupId),
+		Index:     s.LastEntryIndexNTXN(groupId),
 		Successed: false,
 		Convinced: false,
 		Hash:      lastLogHash,
@@ -170,7 +172,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		// 	 will not commit the log but response with current log index and term instead
 		// the leader should response immediately for failed follower response
 		lastLogEntry := s.LastLogEntryNTXN(groupId)
-		lastLogIdx := s.GetGroupLogLastIndexNTXN(groupId)
+		lastLogIdx := s.LastEntryIndexNTXN(groupId)
 		nextLogIdx := lastLogIdx + 1
 		if lastLogEntry.Index != lastLogIdx {
 			// this is unexpected, should be detected quickly
@@ -237,7 +239,6 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 					}
 					if s.WaitLogApproved(groupId, entry.Index) {
 						s.DB.View(func(txn *badger.Txn) error {
-							s.IncrGetGroupLogLastIndex(txn, groupId)
 							s.AppendEntryToLocal(txn, group, entry)
 							return nil
 						})
@@ -295,7 +296,7 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 	if utils.VerifySign(s.GetHostPublicKey(peer.Host), req.Signature, req.Hash) != nil {
 		return response, nil
 	}
-	if s.GetGroupLogLastIndexNTXN(groupId) > req.Index {
+	if s.LastEntryIndexNTXN(groupId) > req.Index {
 		// this node will never have a chance to provide it's vote to the log
 		// will check correctness and vote specifically for client peer without broadcasting
 		s.DB.View(func(txn *badger.Txn) error {

@@ -31,7 +31,7 @@ func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 	}
 	req := &pb.PullGroupLogsResuest{
 		Group: groupId,
-		Index: s.GetGroupLogLastIndexNTXN(groupId) + 1,
+		Index: s.LastEntryIndexNTXN(groupId) + 1,
 	}
 	// Pull entries
 	entries := utils.MajorityResponse(peerClients, func(client pb.BFTRaftClient) (interface{}, []byte) {
@@ -50,7 +50,6 @@ func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 		needCommit := false
 		if err := s.DB.Update(func(txn *badger.Txn) error {
 			if err := s.AppendEntryToLocal(txn, meta.Group, entry); err == nil {
-				s.IncrGetGroupLogLastIndex(txn, groupId)
 				needCommit = true
 				return nil
 			} else {
