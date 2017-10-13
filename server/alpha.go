@@ -70,36 +70,36 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 	// This function should be invoked every time it startup
 	// First we need to get all alpha nodes
 	alphaRPCs := s.Client.AlphaRPCs
-	// get alpha peers from alpha nodes
+	// get alpha members from alpha nodes
 	res := utils.MajorityResponse(alphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
-		if res, err := client.GroupPeers(context.Background(), &spb.GroupId{
+		if res, err := client.GroupMembers(context.Background(), &spb.GroupId{
 			GroupId: utils.ALPHA_GROUP,
 		}); err == nil {
-			return res, GetPeersSignData(res.Peers)
+			return res, GetMembersSignData(res.Members)
 		} else {
 			return nil, []byte{}
 		}
 	})
-	var alphaPeersRes *spb.GroupPeersResponse = nil
+	var alphaMemberRes *spb.GroupMembersResponse = nil
 	if res == nil {
-		alphaPeersRes = nil
+		alphaMemberRes = nil
 	} else {
-		alphaPeersRes = res.(*spb.GroupPeersResponse)
+		alphaMemberRes = res.(*spb.GroupMembersResponse)
 	}
-	if alphaPeersRes == nil {
-		log.Println("cannot get alpha peers, will try to cold start")
+	if alphaMemberRes == nil {
+		log.Println("cannot get alpha members, will try to cold start")
 		s.ColdStart()
 		return
 	}
-	peers := alphaPeersRes.Peers
+	members := alphaMemberRes.Members
 	isAlphaMember := false
-	for _, p := range peers {
-		if p.Host == s.Id {
+	for _, m := range members {
+		if m.Peer.Id == s.Id {
 			isAlphaMember = true
 			break
 		}
 	}
-	lastEntry := alphaPeersRes.LastEntry
+	lastEntry := alphaMemberRes.LastEntry
 	group := s.GetGroupNTXN(utils.ALPHA_GROUP)
 	if isAlphaMember {
 		if group == nil {
@@ -142,8 +142,9 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 				s.SetGroupLogLastIndex(txn, utils.ALPHA_GROUP, lastIndex)
 				// the index will be used to observe changes
 				s.SaveGroup(txn, group)
-				for _, peer := range peers {
-					s.SavePeer(txn, peer)
+				for _, member := range members {
+					s.SavePeer(txn, member.Peer)
+					s.SaveHost(txn, member.Host)
 				}
 				return nil
 			})

@@ -11,11 +11,11 @@ service BFTRaft {
     rpc AppendEntries (AppendEntriesRequest) returns (AppendEntriesResponse) {}
     rpc ApproveAppend (AppendEntriesResponse) returns (ApproveAppendResponse) {}
     rpc GroupHosts (GroupId) returns (GroupNodesResponse) {}
-    rpc GroupPeers (GroupId) returns (GroupPeersResponse) {}
-    rpc GetGroupLeader(GroupId) returns (GroupLeader) {}
+    rpc GroupMembers (GroupId) returns (GroupMembersResponse) {}
+    rpc GetGroupLeader (GroupId) returns (GroupLeader) {}
     rpc GetGroupContent (GroupId) returns (RaftGroup) {}
     rpc PullGroupLogs (PullGroupLogsResuest) returns (LogEntries) {}
-    rpc SendGroupInvitation(GroupInvitation) returns (Nothing) {}
+    rpc SendGroupInvitation (GroupInvitation) returns (Nothing) {}
 }
 
 message CommandRequest {
@@ -131,9 +131,14 @@ message GroupNodesResponse {
     bytes signature = 2;
 }
 
-message GroupPeersResponse {
+message GroupMember {
+    Host host = 1;
+    Peer peer = 2;
+}
+
+message GroupMembersResponse {
     LogEntry last_entry = 1;
-    repeated Peer peers = 2;
+    repeated GroupMember members = 2;
     bytes signature = 3;
 }
 
@@ -151,7 +156,7 @@ message NodeJoinGroupEntry {
     uint64 group = 1;
 }
 
-message GroupLeader{
+message GroupLeader {
     Host node = 1;
     bytes signature = 2;
 }

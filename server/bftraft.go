@@ -380,11 +380,11 @@ func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequ
 	return vote, nil
 }
 
-func GetPeersSignData(peers []*pb.Peer) []byte {
+func GetMembersSignData(members []*pb.GroupMember) []byte {
 	signData := []byte{}
-	for _, peer := range peers {
-		peerBytes, _ := proto.Marshal(peer)
-		signData = append(signData, peerBytes...)
+	for _, member := range members {
+		memberBytes, _ := proto.Marshal(member)
+		signData = append(signData, memberBytes...)
 	}
 	return signData
 }
@@ -398,7 +398,7 @@ func (s *BFTRaftServer) GroupHosts(ctx context.Context, request *pb.GroupId) (*p
 	return &pb.GroupNodesResponse{Nodes: result, Signature: signature}, nil
 }
 
-func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupId) (*pb.GroupPeersResponse, error) {
+func (s *BFTRaftServer) GroupMembers(ctx context.Context, req *pb.GroupId) (*pb.GroupMembersResponse, error) {
 	peersMap := map[uint64]*pb.Peer{}
 	lastEntry := &pb.LogEntry{}
 	s.DB.View(func(txn *badger.Txn) error {
@@ -406,13 +406,16 @@ func (s *BFTRaftServer) GroupPeers(ctx context.Context, req *pb.GroupId) (*pb.Gr
 		peersMap = GetGroupPeersFromKV(txn, req.GroupId)
 		return nil
 	})
-	peers := []*pb.Peer{}
+	members := []*pb.GroupMember{}
 	for _, p := range peersMap {
-		peers = append(peers, p)
+		members = append(members, &pb.GroupMember{
+			Peer: p,
+			Host: s.GetHostNTXN(p.Host),
+		})
 	}
-	return &pb.GroupPeersResponse{
-		Peers:     peers,
-		Signature: s.Sign(GetPeersSignData(peers)),
+	return &pb.GroupMembersResponse{
+		Members:    members,
+		Signature: s.Sign(GetMembersSignData(members)),
 		LastEntry: lastEntry,
 	}, nil
 }
