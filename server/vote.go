@@ -116,7 +116,7 @@ func (s *BFTRaftServer) BecomeLeader(meta *RTGroupMeta) {
 	// so we just send the 'AppendEntry' request in this function
 	// we can use a dedicated rpc protocol for this, but no bother
 	meta.Role = LEADER
-	meta.Group.LeaderPeer = meta.Peer // set self to leader for next following requests
+	meta.Leader = meta.Peer // set self to leader for next following requests
 	s.DB.Update(func(txn *badger.Txn) error {
 		return s.SaveGroup(txn, meta.Group)
 	})
@@ -149,7 +149,7 @@ func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.App
 	if len(votes) > expectedVotes {
 		// received enough votes, will transform to follower
 		meta.Role = FOLLOWER
-		meta.Group.LeaderPeer = appendEntryReq.LeaderId
+		meta.Leader = appendEntryReq.LeaderId
 		ResetTerm(meta, appendEntryReq.Term)
 		s.SaveGroupNTXN(meta.Group)
 		return true

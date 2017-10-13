@@ -106,7 +106,7 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 		appendResult, err := client.AppendEntries(ctx, &pb.AppendEntriesRequest{
 			Group:        group.Id,
 			Term:         group.Term,
-			LeaderId:     peer.Id,
+			LeaderId:     s.Id,
 			PrevLogIndex: prevEntry.Index,
 			PrevLogTerm:  prevEntry.Term,
 			Signature:    s.Sign(signData),
@@ -170,7 +170,7 @@ func ScanHostedGroups(db *badger.DB, serverId uint64) map[uint64]*RTGroupMeta {
 				group := GetGroupFromKV(txn, peer.Group)
 				if group != nil {
 					groups[peer.Group] = NewRTGroupMeta(
-						peer.Id, group.LeaderPeer,
+						peer.Id, 0,
 						GetGroupPeersFromKV(txn, peer.Group), group,
 					)
 				}

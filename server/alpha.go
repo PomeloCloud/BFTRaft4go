@@ -24,7 +24,6 @@ func (s *BFTRaftServer) ColdStart() {
 	alphaGroup := &spb.RaftGroup{
 		Id:           utils.ALPHA_GROUP,
 		Replications: 32,
-		LeaderPeer:   s.Id,
 		Term:         0,
 	}
 	thisPeer := &spb.Peer{
@@ -53,7 +52,7 @@ func (s *BFTRaftServer) ColdStart() {
 		log.Fatal("cannot save to cold start:", err)
 	}
 	s.GroupsOnboard[utils.ALPHA_GROUP] = NewRTGroupMeta(
-		thisPeer.Id, alphaGroup.LeaderPeer,
+		thisPeer.Id, s.Id,
 		map[uint64]*spb.Peer{thisPeer.Id: thisPeer}, alphaGroup,
 	)
 	s.GroupsOnboard[utils.ALPHA_GROUP].Role = LEADER
@@ -119,7 +118,7 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 			})
 			if res != nil {
 				group = res.(*spb.RaftGroup)
-				log.Println("pulled alpha group at term:", group.Term, "leader:", group.LeaderPeer)
+				log.Println("pulled alpha group at term:", group.Term)
 			} else {
 				log.Println("cannot get alpha group from cluster")
 			}

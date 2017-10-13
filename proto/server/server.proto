@@ -103,7 +103,6 @@ message Host {
 message RaftGroup {
     uint32 replications = 1;
     uint64 id = 2;
-    uint64 leader_peer = 3;
     uint64 term = 4;
     // repeated uint64 peers = 4; Can be searched from the database buy scanning
 }
@@ -137,9 +136,9 @@ message GroupMember {
 }
 
 message GroupMembersResponse {
-    LogEntry last_entry = 1;
-    repeated GroupMember members = 2;
-    bytes signature = 3;
+    LogEntry last_entry = 2;
+    repeated GroupMember members = 3;
+    bytes signature = 4;
 }
 
 message PullGroupLogsResuest {
@@ -158,7 +157,8 @@ message NodeJoinGroupEntry {
 
 message GroupLeader {
     Host node = 1;
-    bytes signature = 2;
+    bool Accuate = 2;
+    bytes signature = 3;
 }
 
 message GroupInvitation {

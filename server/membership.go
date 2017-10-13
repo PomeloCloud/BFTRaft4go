@@ -9,9 +9,7 @@ import (
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
-	"github.com/tevino/abool"
 	"log"
-	"sync"
 	"time"
 )
 
@@ -92,7 +90,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			address := s.GetHostNTXN(entry.Command.ClientId).ServerAddr
 			inv := &pb.GroupInvitation{
 				Group:  groupId,
-				Leader: meta.Group.LeaderPeer,
+				Leader: meta.Leader,
 				Node:   meta.Peer,
 			}
 			inv.Signature = s.Sign(InvitationSignature(inv))
@@ -162,7 +160,6 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 		}
 		// regularize and save group
 		group.Term = 0
-		group.LeaderPeer = hostId
 		if err := s.SaveGroup(txn, &group); err != nil {
 			return err
 		}
@@ -173,7 +170,7 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 	}); err == nil {
 		if s.Id == hostId {
 			s.GroupsOnboard[peer.Group] = NewRTGroupMeta(
-				peer.Id, group.LeaderPeer,
+				peer.Id, hostId,
 				map[uint64]*pb.Peer{peer.Id: &peer}, &group,
 			)
 			go func() {
@@ -225,24 +222,28 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 	if err != nil {
 		return err
 	}
-	s.GroupInvitations[groupId] = make(chan uint64)
+	s.GroupInvitations[groupId] = make(chan *pb.GroupInvitation)
 	res, err := s.Client.ExecCommand(utils.ALPHA_GROUP, NODE_JOIN, joinData)
 	if err != nil {
 		return err
 	}
 	if (*res)[0] == 1 {
-		hosts := s.GetGroupHosts(groupId)
+		hosts := s.GetGroupHostsNTXN(groupId)
 		hostsMap := map[uint64]bool{}
 		for _, h := range hosts {
 			hostsMap[h.Id] = true
 		}
 		receivedEnoughInv := make(chan bool, 1)
-		invitations := map[uint64]bool{}
+		invitations := map[uint64]*pb.GroupInvitation{}
+		invLeaders := []uint64{}
 		expectedResponse := len(hostsMap) / 2
 		go func() {
-			for invHost := range s.GroupInvitations[groupId] {
-				if _, isMember := hostsMap[invHost]; isMember {
-					invitations[invHost] = true
+			for inv := range s.GroupInvitations[groupId] {
+				if _, isMember := hostsMap[inv.Node]; isMember {
+					if _, hasInv := invitations[inv.Node]; !hasInv {
+						invitations[inv.Node] = inv
+						invLeaders = append(invLeaders, inv.Leader)
+					}
 					if len(invitations) > expectedResponse {
 						receivedEnoughInv <- true
 					}
@@ -264,17 +265,14 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 				groupPeers = GetGroupPeersFromKV(txn, peer.Group)
 				return s.SavePeer(txn, peer)
 			}); err == nil {
+				leader := utils.PickMajority(invLeaders)
+				log.Println("received enough invitations, will join to group", groupId, "with leader", leader)
 				groupPeers[s.Id] = peer
-				s.GroupsOnboard[peer.Group] = &RTGroupMeta{
-					Peer:       peer.Id,
-					Leader:     group.LeaderPeer,
-					Lock:       sync.RWMutex{},
-					GroupPeers: groupPeers,
-					Group:      group,
-					IsBusy:     abool.NewBool(false),
-				}
+				s.GroupsOnboard[peer.Group] = NewRTGroupMeta(
+					peer.Id, leader, groupPeers, group,
+				)
+				log.Println("node", peer.Id, "joined group", groupId)
 			}
-			log.Println("node", peer.Id, "joined group", groupId)
 			return nil
 		case <-time.After(30 * time.Second):
 			close(s.GroupInvitations[groupId])

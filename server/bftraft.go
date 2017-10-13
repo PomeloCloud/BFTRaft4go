@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"crypto/rsa"
-	"errors"
 	"flag"
 	"github.com/PomeloCloud/BFTRaft4go/client"
 	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
@@ -31,7 +30,7 @@ type BFTRaftServer struct {
 	DB                *badger.DB
 	FuncReg           map[uint64]map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte
 	GroupsOnboard     map[uint64]*RTGroupMeta
-	GroupInvitations  map[uint64]chan uint64
+	GroupInvitations  map[uint64]chan *pb.GroupInvitation
 	PendingNewGroups  map[uint64]chan error
 	Peers             *cache.Cache
 	Groups            *cache.Cache
@@ -60,8 +59,8 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	if group == nil {
 		return response, nil
 	}
-	leader_peer_id := group.LeaderPeer
-	leader_peer := s.GetPeerNTXN(group_id, leader_peer_id)
+	leader_node := s.GroupLeader(group_id).Node
+	leader_peer := s.GetPeerNTXN(group_id, leader_node.Id)
 	if leader_peer == nil {
 		return response, nil
 	}
@@ -96,7 +95,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				}
 				return s.AppendEntryToLocal(txn, group, &logEntry)
 			}); err == nil {
-				s.SendFollowersHeartbeat(ctx, leader_peer_id, group)
+				s.SendFollowersHeartbeat(ctx, leader_peer.Id, group)
 				if len(groupMeta.GroupPeers) < 2 || s.WaitLogApproved(group_id, index) {
 					response.Result = *s.CommitGroupLog(group_id, &logEntry)
 				}
@@ -136,33 +135,35 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	}
 	// verify group and leader existence
 	if thisPeer == nil || group == nil || leaderPeer == nil {
+		log.Println("host or group not existed on append entries")
 		return response, nil
 	}
 	// check leader transfer
-	if len(req.QuorumVotes) > 0 && req.LeaderId != group.LeaderPeer {
-		if groupMeta.VotedPeer == 0 {
-			if !s.BecomeFollower(groupMeta, req) {
-				return response, nil
-			}
-		} else {
+	if len(req.QuorumVotes) > 0 && req.LeaderId != groupMeta.Leader {
+		if !s.BecomeFollower(groupMeta, req) {
+			log.Println("cannot become a follower when append entries due to votes")
 			return response, nil
 		}
-	} else if req.LeaderId != group.LeaderPeer {
+	} else if req.LeaderId != groupMeta.Leader {
+		log.Println("leader not matches when append entries")
 		return response, nil
 	}
 	response.Convinced = true
 	// check leader node exists
 	leaderNode := s.GetHostNTXN(leaderPeer.Host)
 	if leaderPeer == nil {
+		log.Println("cannot get leader when append entries")
 		return response, nil
 	}
 	// verify signature
 	if leaderPublicKey := s.GetHostPublicKey(leaderNode.Id); leaderPublicKey != nil {
 		signData := AppendLogEntrySignData(group.Id, group.Term, req.PrevLogIndex, req.PrevLogTerm)
-		if utils.VerifySign(leaderPublicKey, req.Signature, signData) != nil {
+		if err := utils.VerifySign(leaderPublicKey, req.Signature, signData); err != nil {
+			log.Println("leader signature not right when append entries:", err)
 			return response, nil
 		}
 	} else {
+		log.Println("cannot get leader public key when append entries")
 		return response, nil
 	}
 	if len(req.Entries) > 0 {
@@ -183,6 +184,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 			if req.PrevLogTerm != lastLogEntry.Term {
 				// log mismatch, cannot preceded
 				// what to do next will leave to the leader
+				log.Println("cannot get leader public key when append entries", req.PrevLogTerm, lastLogEntry.Term)
 				return response, nil
 			} else {
 				// first log matched
@@ -193,7 +195,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 					cmd := entry.Command
 					expectedHash, _ = utils.LogHash(expectedHash, i, cmd.FuncId, cmd.Arg)
 					if entry.Index != i || !bytes.Equal(entry.Hash, expectedHash) || !s.VerifyCommandSign(entry.Command) {
-						// not all entries match or cannot verified
+						log.Println("not all entries match or cannot verified")
 						return response, nil
 					}
 				}
@@ -392,7 +394,7 @@ func GetMembersSignData(members []*pb.GroupMember) []byte {
 func (s *BFTRaftServer) GroupHosts(ctx context.Context, request *pb.GroupId) (*pb.GroupNodesResponse, error) {
 	// Outlet for group server memberships that contains all of the meta data on the network
 	// This API is intended to be invoked from any machine to any members in the cluster
-	result := s.GetGroupHosts(request.GroupId)
+	result := s.GetGroupHostsNTXN(request.GroupId)
 	// signature should be optional for clients in case of the client don't know server public keys
 	signature := s.Sign(utils.NodesSignData(result))
 	return &pb.GroupNodesResponse{Nodes: result, Signature: signature}, nil
@@ -490,29 +492,13 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 }
 
 func (s *BFTRaftServer) GetGroupLeader(ctx context.Context, req *pb.GroupId) (*pb.GroupLeader, error) {
-	response := &pb.GroupLeader{}
-	err := s.DB.View(func(txn *badger.Txn) error {
-		groupId := req.GroupId
-		group := s.GetGroup(txn, groupId)
-		if group == nil {
-			return errors.New("cannot find group")
-		}
-		leader_peer_id := group.LeaderPeer
-		host := s.GetHost(txn, leader_peer_id)
-		if host == nil {
-			return errors.New("cannot find host")
-		} else {
-			response.Node = host
-			return nil
-		}
-	})
-	return response, err
+	return s.GroupLeader(req.GroupId), nil
 }
 
 func (s *BFTRaftServer) SendGroupInvitation(ctx context.Context, inv *pb.GroupInvitation) (*pb.Nothing, error) {
 	// TODO: verify invitation signature
 	go func() {
-		s.GroupInvitations[inv.Group] <- inv.Node
+		s.GroupInvitations[inv.Group] <- inv
 	}()
 	return &pb.Nothing{}, nil
 }
@@ -559,7 +545,7 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		GroupAppendedLogs: cache.New(5*time.Minute, 1*time.Minute),
 		NodePublicKeys:    cache.New(5*time.Minute, 1*time.Minute),
 		ClientPublicKeys:  cache.New(5*time.Minute, 1*time.Minute),
-		GroupInvitations:  map[uint64]chan uint64{},
+		GroupInvitations:  map[uint64]chan *pb.GroupInvitation{},
 		FuncReg:           map[uint64]map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte{},
 		Client:            nclient,
 		PrivateKey:        privateKey,
