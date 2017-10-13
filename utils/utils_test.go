@@ -34,9 +34,13 @@ func TestVerifySign(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
+	pubFrPriv := PublicKeyFromPrivate(priK)
 	data := []byte("test signature")
 	sig := Sign(priK, data)
 	if err := VerifySign(pubK, sig, data); err != nil {
+		panic(err)
+	}
+	if err := VerifySign(pubFrPriv, sig, data); err != nil {
 		panic(err)
 	}
 }
