@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand"
 	"time"
+	"log"
 )
 
 func RandomTimeout(mult float32) int {
@@ -27,12 +28,14 @@ func (s *BFTRaftServer) StartTimingWheel() {
 							panic("Follower is leader")
 						}
 						// not leader
+						log.Println(s.Id, "is candidate")
 						go s.BecomeCandidate(meta)
 					} else if meta.Role == LEADER {
 						// is leader, send heartbeat
 						go s.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
 					} else if meta.Role == CANDIDATE {
 						// is candidate but vote expired, start a new vote term
+						log.Println(s.Id, "started a new election")
 						go s.BecomeCandidate(meta)
 					} else if meta.Role == OBSERVER {
 						// update local data

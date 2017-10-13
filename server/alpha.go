@@ -2,14 +2,12 @@ package server
 
 import (
 	"context"
+	"crypto/x509"
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
-	"github.com/golang/protobuf/proto"
 	"github.com/dgraph-io/badger"
+	"github.com/golang/protobuf/proto"
 	"log"
-	"sync"
-	"github.com/tevino/abool"
-	"crypto/x509"
 )
 
 // Alpha group is a group specialized for tracking network members and groups
@@ -24,22 +22,22 @@ import (
 func (s *BFTRaftServer) ColdStart() {
 	// cloud start will assign the node as the only member in it's alpha group
 	alphaGroup := &spb.RaftGroup{
-		Id: utils.ALPHA_GROUP,
+		Id:           utils.ALPHA_GROUP,
 		Replications: 32,
-		LeaderPeer: s.Id,
-		Term: 0,
+		LeaderPeer:   s.Id,
+		Term:         0,
 	}
 	thisPeer := &spb.Peer{
-		Id: s.Id,
-		Group: utils.ALPHA_GROUP,
-		Host: s.Id,
-		NextIndex: 0,
+		Id:         s.Id,
+		Group:      utils.ALPHA_GROUP,
+		Host:       s.Id,
+		NextIndex:  0,
 		MatchIndex: 0,
 	}
 	thisHost := &spb.Host{
-		Id: s.Id,
-		LastSeen: 0,
-		Online: true,
+		Id:         s.Id,
+		LastSeen:   0,
+		Online:     true,
 		ServerAddr: s.Opts.Address,
 	}
 	thisHost.PublicKey, _ = x509.MarshalPKIXPublicKey(utils.PublicKeyFromPrivate(s.PrivateKey))
@@ -54,14 +52,11 @@ func (s *BFTRaftServer) ColdStart() {
 	}); err != nil {
 		log.Fatal("cannot save to cold start:", err)
 	}
-	s.GroupsOnboard[utils.ALPHA_GROUP] = &RTGroupMeta{
-		Peer:       thisPeer.Id,
-		Leader:     alphaGroup.LeaderPeer,
-		Lock:       sync.RWMutex{},
-		GroupPeers: map[uint64]*spb.Peer{thisPeer.Id: thisPeer},
-		Group:      alphaGroup,
-		IsBusy:     abool.NewBool(false),
-	}
+	s.GroupsOnboard[utils.ALPHA_GROUP] = NewRTGroupMeta(
+		thisPeer.Id, alphaGroup.LeaderPeer,
+		map[uint64]*spb.Peer{thisPeer.Id: thisPeer}, alphaGroup,
+	)
+	s.GroupsOnboard[utils.ALPHA_GROUP].Role = LEADER
 	s.Client.AlphaRPCs.ResetBootstrap([]string{s.Opts.Address})
 }
 
@@ -148,6 +143,7 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 				}
 				return nil
 			})
+			// TODO: observe alpha group
 		} else {
 			log.Fatal("cannot generate alpha group from cluster")
 		}

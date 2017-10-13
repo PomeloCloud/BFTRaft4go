@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
-	"sync"
-	"time"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
+	"sync"
+	"time"
 )
 
 func RequestVoteRequestSignData(req *pb.RequestVoteRequest) []byte {
@@ -23,7 +23,7 @@ func ResetTerm(meta *RTGroupMeta, term uint64) {
 	meta.Votes = []*pb.RequestVoteResponse{}
 	meta.VotedPeer = 0
 	for peerId := range meta.GroupPeers {
-		meta.VotesForEntries[peerId] = true
+		meta.SendVotesForPeers[peerId] = true
 	}
 }
 
@@ -44,11 +44,17 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 	term := group.Term
 	s.SaveGroupNTXN(meta.Group)
 	lastEntry := s.LastLogEntryNTXN(group.Id)
+	var lastIndex uint64 = 0
+	var lastLogTerm uint64 = 0
+	if lastEntry != nil {
+		lastIndex = lastEntry.Index
+		lastLogTerm = lastEntry.Term
+	}
 	request := &pb.RequestVoteRequest{
 		Group:       group.Id,
 		Term:        term,
-		LogIndex:    lastEntry.Index,
-		LogTerm:     lastEntry.Term,
+		LogIndex:    lastIndex,
+		LogTerm:     lastLogTerm,
 		CandidateId: meta.Peer,
 		Signature:   []byte{},
 	}

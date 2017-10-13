@@ -71,6 +71,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 				// skip if current node is the joined node
 				// when joined a groupId, the node should do all of
 				// those following things by itself after the log is replicated
+				log.Println("skip add current node join from sm")
 				return errors.New("join should be processed")
 			}
 			group := s.GetGroup(txn, groupId)
@@ -98,14 +99,13 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			if client, err := utils.GetClusterRPC(address); err == nil {
 				go client.SendGroupInvitation(context.Background(), inv)
 				s.GroupsOnboard[groupId].GroupPeers[peer.Id] = &peer
+				log.Println("we have new node ", node, "join group", groupId)
 				return []byte{1}
 			} else {
 				log.Println(err)
 				return []byte{0}
 			}
-			meta.GroupPeers[node] = &peer
 		}
-		log.Println("we have new node ", node, "join group", groupId)
 		return []byte{1}
 	} else {
 		log.Println(err)
@@ -172,14 +172,10 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 		return nil
 	}); err == nil {
 		if s.Id == hostId {
-			s.GroupsOnboard[peer.Group] = &RTGroupMeta{
-				Peer:       peer.Id,
-				Leader:     group.LeaderPeer,
-				Lock:       sync.RWMutex{},
-				GroupPeers: map[uint64]*pb.Peer{peer.Id: &peer},
-				Group:      &group,
-				IsBusy:     abool.NewBool(false),
-			}
+			s.GroupsOnboard[peer.Group] = NewRTGroupMeta(
+				peer.Id, group.LeaderPeer,
+				map[uint64]*pb.Peer{peer.Id: &peer}, &group,
+			)
 			go func() {
 				s.PendingNewGroups[group.Id] <- nil
 			}()
@@ -278,7 +274,7 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 					IsBusy:     abool.NewBool(false),
 				}
 			}
-			log.Println("node ", peer.Id, "joined group", groupId)
+			log.Println("node", peer.Id, "joined group", groupId)
 			return nil
 		case <-time.After(30 * time.Second):
 			close(s.GroupInvitations[groupId])

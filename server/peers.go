@@ -8,9 +8,7 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
-	"github.com/tevino/abool"
 	"log"
-	"sync"
 )
 
 func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
@@ -100,7 +98,7 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 	}
 	if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 		votes := []*pb.RequestVoteResponse{}
-		if meta.VotesForEntries[meta.Peer] {
+		if meta.SendVotesForPeers[meta.Peer] {
 			votes = meta.Votes
 		}
 		entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
@@ -134,7 +132,7 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 					log.Println(err)
 				}
 			}
-			meta.VotesForEntries[meta.Peer] = appendResult.Convinced
+			meta.SendVotesForPeers[meta.Peer] = !appendResult.Convinced
 		}
 	}
 }
@@ -171,14 +169,10 @@ func ScanHostedGroups(db *badger.DB, serverId uint64) map[uint64]*RTGroupMeta {
 			if peer.Host == serverId {
 				group := GetGroupFromKV(txn, peer.Group)
 				if group != nil {
-					groups[peer.Group] = &RTGroupMeta{
-						Peer:       peer.Id,
-						Leader:     group.LeaderPeer,
-						Lock:       sync.RWMutex{},
-						GroupPeers: GetGroupPeersFromKV(txn, peer.Group),
-						Group:      group,
-						IsBusy:     abool.NewBool(false),
-					}
+					groups[peer.Group] = NewRTGroupMeta(
+						peer.Id, group.LeaderPeer,
+						GetGroupPeersFromKV(txn, peer.Group), group,
+					)
 				}
 			}
 		}

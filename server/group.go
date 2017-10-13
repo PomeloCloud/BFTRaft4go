@@ -21,17 +21,38 @@ const (
 )
 
 type RTGroupMeta struct {
-	Peer            uint64
-	Leader          uint64
-	VotedPeer       uint64
-	Lock            sync.RWMutex
-	GroupPeers      map[uint64]*pb.Peer
-	Group           *pb.RaftGroup
-	Timeout         time.Time
-	Role            int
-	Votes           []*pb.RequestVoteResponse
-	VotesForEntries map[uint64]bool // key is peer id
-	IsBusy          *abool.AtomicBool
+	Peer              uint64
+	Leader            uint64
+	VotedPeer         uint64
+	Lock              sync.RWMutex
+	GroupPeers        map[uint64]*pb.Peer
+	Group             *pb.RaftGroup
+	Timeout           time.Time
+	Role              int
+	Votes             []*pb.RequestVoteResponse
+	SendVotesForPeers map[uint64]bool // key is peer id
+	IsBusy            *abool.AtomicBool
+}
+
+func NewRTGroupMeta(
+	peer uint64,
+	leader uint64,
+	groupPeers map[uint64]*pb.Peer,
+	group *pb.RaftGroup,
+) *RTGroupMeta {
+	return &RTGroupMeta{
+		Peer:              peer,
+		Leader:            leader,
+		VotedPeer:         0,
+		Lock:              sync.RWMutex{},
+		GroupPeers:        groupPeers,
+		Group:             group,
+		Timeout:           time.Now(),
+		Role:              FOLLOWER,
+		Votes:             []*pb.RequestVoteResponse{},
+		SendVotesForPeers: map[uint64]bool{},
+		IsBusy:            abool.NewBool(false),
+	}
 }
 
 func GetGroupFromKV(txn *badger.Txn, groupId uint64) *pb.RaftGroup {

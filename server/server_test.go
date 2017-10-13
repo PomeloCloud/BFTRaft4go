@@ -44,12 +44,16 @@ func TestColdStart(t *testing.T) {
 	// test for creating a cold started node and add a member to join it
 	dbPath1 := "test_data/TestColdStart1"
 	dbPath2 := "test_data/TestColdStart2"
+	dbPath3 := "test_data/TestColdStart3"
 	addr1 := "localhost:4561"
 	addr2 := "localhost:4562"
+	addr3 := "localhost:4563"
 	os.RemoveAll(dbPath1)
 	os.RemoveAll(dbPath2)
+	os.RemoveAll(dbPath3)
 	defer os.RemoveAll(dbPath1)
 	defer os.RemoveAll(dbPath2)
+	defer os.RemoveAll(dbPath3)
 	println("start server 1")
 	s1 := getServer(dbPath1, addr1, []string{}, t)
 	s1.StartServer()
@@ -59,4 +63,9 @@ func TestColdStart(t *testing.T) {
 	s2.StartServer()
 	time.Sleep(1 * time.Second)
 	s2.NodeJoin(utils.ALPHA_GROUP)
+	println("start server 3")
+	s3 := getServer(dbPath3, addr3, []string{addr1, addr2}, t)
+	s3.StartServer()
+	time.Sleep(1 * time.Second)
+	s3.NodeJoin(utils.ALPHA_GROUP)
 }

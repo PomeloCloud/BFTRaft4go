@@ -131,8 +131,6 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		Signature: s.Sign(lastLogHash),
 		Peer:      thisPeerId,
 	}
-	groupMeta.Lock.Lock()
-	defer groupMeta.Lock.Unlock()
 	// verify group and leader existence
 	if thisPeer == nil || group == nil || leaderPeer == nil {
 		return response, nil
