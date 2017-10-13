@@ -120,6 +120,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	lastLogHash := s.LastEntryHashNTXN(groupId)
 	thisPeer := s.GroupServerPeerNTXN(groupId)
 	thisPeerId := uint64(0)
+	log.Println("append log to", s.Id, "entries:", len(req.Entries))
 	if thisPeer != nil {
 		thisPeerId = thisPeer.Id
 	}
