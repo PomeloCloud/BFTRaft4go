@@ -202,6 +202,7 @@ func (s *BFTRaftServer) RegHost() error {
 	if err != nil {
 		return err
 	}
+	s.SaveHostNTXN(&host) // save itself first
 	res, err := s.Client.ExecCommand(groupId, REG_NODE, hostData)
 	if err != nil {
 		return err

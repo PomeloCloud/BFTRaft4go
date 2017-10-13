@@ -38,7 +38,7 @@ func (s *BFTRaftServer) SetLogAppended(groupId uint64, logIndex uint64, isApprov
 
 func ExpectedHonestPeers(group_peers []*pb.Peer) int {
 	num_peers := len(group_peers)
-	return num_peers - num_peers/3
+	return num_peers - num_peers/2
 }
 
 func (s *BFTRaftServer) PeerApprovedAppend(groupId uint64, logIndex uint64, peer uint64, group_peers []*pb.Peer, isApproved bool) {
@@ -50,7 +50,7 @@ func (s *BFTRaftServer) PeerApprovedAppend(groupId uint64, logIndex uint64, peer
 	approvedPeersMap := approvedPeers.(map[uint64]bool)
 	approvedPeersMap[peer] = isApproved
 	expectedVotes := ExpectedHonestPeers(group_peers)
-	if len(approvedPeersMap) > expectedVotes {
+	if len(approvedPeersMap) >= expectedVotes {
 		approvedVotes := 0
 		rejectedVotes := 0
 		for _, vote := range approvedPeersMap {

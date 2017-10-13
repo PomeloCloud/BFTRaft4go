@@ -67,7 +67,7 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 		iter := s.ReversedLogIterator(txn, group.Id)
 		nextLogIdx := peer.NextIndex
 		for true {
-			entry := iter.Next()
+			entry := iter.Current()
 			if entry == nil {
 				break
 			}
@@ -76,6 +76,14 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 				break
 			}
 			entries = append(entries, entry)
+			iter.Next()
+		}
+		if peer.NextIndex == 0 && peer.MatchIndex == 0 {
+			// new peer, should set prevEntry = 0
+			prevEntry = &pb.LogEntry{
+				Term:  0,
+				Index: 0,
+			}
 		}
 		// reverse so the first will be the one with least index
 		if len(entries) > 1 {
@@ -103,13 +111,14 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 		}
 		entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
 		signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)
+		signature := s.Sign(signData)
 		appendResult, err := client.AppendEntries(ctx, &pb.AppendEntriesRequest{
 			Group:        group.Id,
 			Term:         group.Term,
 			LeaderId:     s.Id,
 			PrevLogIndex: prevEntry.Index,
 			PrevLogTerm:  prevEntry.Term,
-			Signature:    s.Sign(signData),
+			Signature:    signature,
 			QuorumVotes:  votes,
 			Entries:      entries,
 		})

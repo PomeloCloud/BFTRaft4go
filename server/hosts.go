@@ -52,6 +52,9 @@ func (s *BFTRaftServer) GetHostPublicKey(nodeId uint64) *rsa.PublicKey {
 		return cachedKey.(*rsa.PublicKey)
 	}
 	node := s.GetHostNTXN(nodeId)
+	if node == nil {
+		return nil
+	}
 	if key, err := utils.ParsePublicKey(node.PublicKey); err == nil {
 		s.NodePublicKeys.Set(cacheKey, key, cache.DefaultExpiration)
 		return key
