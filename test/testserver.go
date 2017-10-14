@@ -21,7 +21,7 @@ func getServer(dbPath string, addr string, bootstraps []string) *server.BFTRaftS
 		DBPath:           dbPath,
 		Address:          addr,
 		Bootstrap:        bootstraps,
-		ConsensusTimeout: 1 * time.Minute,
+		ConsensusTimeout: 5 * time.Second,
 	})
 
 	if err != nil {
