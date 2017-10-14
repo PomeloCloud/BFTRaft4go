@@ -63,7 +63,7 @@ func TestColdStart(t *testing.T) {
 	s2.StartServer()
 	time.Sleep(1 * time.Second)
 	s2.NodeJoin(utils.ALPHA_GROUP)
-	time.Sleep(5 * time.Second)
+	time.Sleep(20 * time.Second)
 	//println("start server 3")
 	//s3 := getServer(dbPath3, addr3, []string{addr1, addr2}, t)
 	//s3.StartServer()

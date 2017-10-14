@@ -66,10 +66,10 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	}
 	if leader_node := s.GetHostNTXN(leader_peer.Host); leader_node != nil {
 		isRegNewNode := false
-		log.Println("Executing command group:", cmd.Group, "func:", cmd.FuncId, "client:", cmd.ClientId)
+		log.Println("executing command group:", cmd.Group, "func:", cmd.FuncId, "client:", cmd.ClientId)
 		if s.GetHostNTXN(cmd.ClientId) == nil && cmd.Group == utils.ALPHA_GROUP && cmd.FuncId == REG_NODE {
 			// if registering new node, we should skip the signature verification
-			log.Println("Cannot find node and it's trying to register")
+			log.Println("cannot find node and it's trying to register")
 			isRegNewNode = true
 		}
 		if leader_node.Id != s.Id {
@@ -100,7 +100,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 					response.Result = *s.CommitGroupLog(group_id, &logEntry)
 				}
 			} else {
-				log.Println("Append entry on leader failed:", err)
+				log.Println("append entry on leader failed:", err)
 			}
 		}
 	}
@@ -119,7 +119,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	lastLogHash := s.LastEntryHashNTXN(groupId)
 	thisPeer := s.GroupServerPeerNTXN(groupId)
 	thisPeerId := uint64(0)
-	log.Println("append log to", s.Id, "entries:", len(req.Entries))
+	// log.Println("append log to", s.Id, "entries:", len(req.Entries))
 	if thisPeer != nil {
 		thisPeerId = thisPeer.Id
 	}
@@ -215,6 +215,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 				//		2. through the appended 'ApproveAppendResponse' for catch up
 				groupPeers := s.OnboardGroupPeersSlice(groupId)
 				for _, entry := range req.Entries {
+					log.Println("trying to append log", entry.Index, "for group", groupId, "total", len(req.Entries))
 					for _, peer := range groupPeers {
 						if peer.Host == s.Id {
 							continue
@@ -234,6 +235,8 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 										); err == nil {
 											if approveRes.Appended && !approveRes.Delayed && !approveRes.Failed {
 												s.PeerApprovedAppend(groupId, entry.Index, peer.Id, groupPeers, true)
+											} else {
+												log.Println("node", peer.Host, "returned approval", approveRes)
 											}
 										} else {
 											log.Println("error on verify approve signature")
@@ -265,6 +268,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 							})
 						}
 					}
+					log.Println("done appending log", entry.Index, "for group", groupId, "total", len(req.Entries))
 				}
 				response.Successed = true
 			}
@@ -304,7 +308,9 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 	if utils.VerifySign(s.GetHostPublicKey(peer.Host), req.Signature, req.Hash) != nil {
 		return response, nil
 	}
-	if s.LastEntryIndexNTXN(groupId) > req.Index {
+	meta := s.GroupsOnboard[groupId]
+	lastIndex := s.LastEntryIndexNTXN(groupId)
+	if (lastIndex == req.Index && meta.Leader == s.Id) || lastIndex > req.Index {
 		// this node will never have a chance to provide it's vote to the log
 		// will check correctness and vote specifically for client peer without broadcasting
 		s.DB.View(func(txn *badger.Txn) error {
@@ -491,17 +497,16 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 	sentMsgs := 0
 	for peer := range host_peers {
 		if peer.Id != leader_peer_id {
+			sentMsgs++
 			go func() {
 				s.SendPeerUncommittedLogEntries(ctx, group, peer)
 				completion <- true
-				sentMsgs++
 			}()
 		}
 	}
-	if num_peers > 0 {
-		for i := 0; i < sentMsgs; i++ {
-			<- completion
-		}
+	// log.Println("sending log to", sentMsgs, "followers with", num_peers, "peers")
+	for i := 0; i < sentMsgs; i++ {
+		<- completion
 	}
 	RefreshTimer(s.GroupsOnboard[group.Id], 1)
 }

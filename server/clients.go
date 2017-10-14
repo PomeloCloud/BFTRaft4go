@@ -33,7 +33,7 @@ func (cs *ClientStore) Get(serverAddr string) (*Client, error) {
 	}
 	rpcClient := cpb.NewBFTRaftClientClient(conn)
 	client := Client{conn, rpcClient}
-	cs.clients.Set(serverAddr, client, cache.DefaultExpiration)
+	cs.clients.Set(serverAddr, &client, cache.DefaultExpiration)
 	return &client, nil
 }
 

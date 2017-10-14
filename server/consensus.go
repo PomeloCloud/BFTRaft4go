@@ -60,11 +60,11 @@ func (s *BFTRaftServer) PeerApprovedAppend(groupId uint64, logIndex uint64, peer
 				rejectedVotes++
 			}
 		}
-		if approvedVotes > expectedVotes {
+		if approvedVotes >= expectedVotes {
 			s.SetLogAppended(groupId, logIndex, true)
 			return
 		}
-		if rejectedVotes > (len(group_peers) - expectedVotes) {
+		if rejectedVotes >= (len(group_peers) - expectedVotes) {
 			s.SetLogAppended(groupId, logIndex, false)
 			return
 		}
