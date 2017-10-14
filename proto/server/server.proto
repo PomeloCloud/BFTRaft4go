@@ -87,7 +87,6 @@ message AppendEntriesResponse {
 message Peer {
     uint64 id = 1;
     uint64 group = 2;
-    uint64 host = 3;
     uint64 next_index = 4;
     uint64 match_index = 5;
 }

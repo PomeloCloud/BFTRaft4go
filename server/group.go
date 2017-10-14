@@ -115,7 +115,7 @@ func (s *BFTRaftServer) GetGroupHosts(txn *badger.Txn, groupId uint64) []*pb.Hos
 	nodes := []*pb.Host{}
 	peers := GetGroupPeersFromKV(txn, groupId)
 	for _, peer := range peers {
-		node := s.GetHost(txn, peer.Host)
+		node := s.GetHost(txn, peer.Id)
 		if node != nil {
 			nodes = append(nodes, node)
 		} else {

@@ -10,21 +10,17 @@ import (
 
 func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 	meta, foundMeta := s.GroupsOnboard[groupId]
+	if !foundMeta {
+		panic("meta not found for pull")
+	}
 	if meta.IsBusy.IsSet() {
 		return
 	}
 	meta.IsBusy.Set()
-	meta.Lock.Lock()
-	defer func() {
-		meta.Lock.Unlock()
-		meta.IsBusy.UnSet()
-	}()
-	if !foundMeta {
-		panic("meta not found for pull")
-	}
+	defer meta.IsBusy.UnSet()
 	peerClients := []*pb.BFTRaftClient{}
 	for _, peer := range meta.GroupPeers {
-		node := s.GetHostNTXN(peer.Host)
+		node := s.GetHostNTXN(peer.Id)
 		if rpc, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 			peerClients = append(peerClients, &rpc)
 		}

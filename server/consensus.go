@@ -4,7 +4,6 @@ import (
 	"fmt"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/patrickmn/go-cache"
-	"time"
 )
 
 func (s *BFTRaftServer) prepareApproveChan(groupId uint64, logIndex uint64) {
@@ -15,15 +14,18 @@ func (s *BFTRaftServer) prepareApproveChan(groupId uint64, logIndex uint64) {
 }
 
 func (s *BFTRaftServer) WaitLogApproved(groupId uint64, logIndex uint64) bool {
-	s.prepareApproveChan(groupId, logIndex)
-	cache_key := fmt.Sprint(groupId, "-", logIndex)
-	cache_chan, _ := s.GroupAppendedLogs.Get(cache_key)
-	select {
-	case approved := <-cache_chan.(chan bool):
-		return approved
-	case <-time.After(s.Opts.ConsensusTimeout):
-		return false
-	}
+	// TODO: fix wait approved
+	//s.prepareApproveChan(groupId, logIndex)
+	//cache_key := fmt.Sprint(groupId, "-", logIndex)
+	//cache_chan, _ := s.GroupAppendedLogs.Get(cache_key)
+	//select {
+	//case approved := <-cache_chan.(chan bool):
+	//	return approved
+	//case <-time.After(s.Opts.ConsensusTimeout):
+	//	log.Println("wait apprival timeout, group:", groupId, "log:", logIndex)
+	//	return false
+	//}
+	return true
 }
 
 func (s *BFTRaftServer) SetLogAppended(groupId uint64, logIndex uint64, isApproved bool) {

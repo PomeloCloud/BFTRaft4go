@@ -29,7 +29,6 @@ func (s *BFTRaftServer) ColdStart() {
 	thisPeer := &spb.Peer{
 		Id:         s.Id,
 		Group:      utils.ALPHA_GROUP,
-		Host:       s.Id,
 		NextIndex:  0,
 		MatchIndex: 0,
 	}

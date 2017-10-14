@@ -33,11 +33,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 		return
 	}
 	meta.IsBusy.Set()
-	meta.Lock.Lock()
-	defer func() {
-		meta.Lock.Unlock()
-		meta.IsBusy.UnSet()
-	}()
+	defer meta.IsBusy.UnSet()
 	RefreshTimer(meta, 10)
 	meta.Role = CANDIDATE
 	group := meta.Group
@@ -65,7 +61,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 	voteReceived := make(chan *pb.RequestVoteResponse)
 	adequateVotes := make(chan bool, 1)
 	for _, peer := range meta.GroupPeers {
-		nodeId := peer.Host
+		nodeId := peer.Id
 		if nodeId == s.Id {
 			continue
 		}
@@ -141,7 +137,7 @@ func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.App
 		}
 		// check their signatures
 		signData := RequestVoteResponseSignData(vote)
-		publicKey := s.GetHostPublicKey(votePeer.Host)
+		publicKey := s.GetHostPublicKey(votePeer.Id)
 		if utils.VerifySign(publicKey, vote.Signature, signData) != nil {
 			continue
 		}

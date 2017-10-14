@@ -20,7 +20,7 @@ func getServer(dbPath string, addr string, bootstraps []string, t *testing.T) *B
 		DBPath: dbPath,
 		Address: addr,
 		Bootstrap: bootstraps,
-		ConsensusTimeout: 1 * time.Minute,
+		ConsensusTimeout: 5 * time.Second,
 	})
 
 	if err != nil {

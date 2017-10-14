@@ -42,6 +42,7 @@ func (s *BFTRaftServer) SMRegHost(arg *[]byte, entry *pb.LogEntry) []byte {
 				return err
 			}
 		})
+		log.Println("we have node", node.Id, "on the network")
 		return []byte{1}
 	} else {
 		log.Println("error on decoding reg host:", err)
@@ -58,7 +59,6 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 		peer := pb.Peer{
 			Id:         node,
 			Group:      groupId,
-			Host:       node,
 			NextIndex:  0,
 			MatchIndex: 0,
 		}
@@ -103,7 +103,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			if client, err := utils.GetClusterRPC(address); err == nil {
 				go client.SendGroupInvitation(context.Background(), inv)
 				s.GroupsOnboard[groupId].GroupPeers[peer.Id] = &peer
-				log.Println("we have new node ", node, "join group", groupId)
+				log.Println("we have new node ", node.Id, "join group", groupId)
 				return []byte{1}
 			} else {
 				log.Println("cannot get cluster rpc for node join",err)
@@ -155,7 +155,6 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 	peer := pb.Peer{
 		Id:         hostId,
 		Group:      group.Id,
-		Host:       hostId,
 		NextIndex:  0,
 		MatchIndex: 0,
 	}
@@ -217,6 +216,7 @@ func (s *BFTRaftServer) RegHost() error {
 	case 0:
 		return errors.New("remote error")
 	case 1:
+		log.Println("node", s.Id, "registed")
 		return nil
 	}
 	return errors.New("unexpected")
@@ -232,6 +232,7 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 	s.GroupInvitations[groupId] = make(chan *pb.GroupInvitation)
 	res, err := s.Client.ExecCommand(utils.ALPHA_GROUP, NODE_JOIN, joinData)
 	if err != nil {
+		log.Println("error on join group:", err)
 		return err
 	}
 	if (*res)[0] == 1 {
@@ -263,7 +264,6 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 			peer := &pb.Peer{
 				Id:         s.Id,
 				Group:      groupId,
-				Host:       s.Id,
 				NextIndex:  0,
 				MatchIndex: 0,
 			}

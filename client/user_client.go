@@ -151,7 +151,7 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 			hash := utils.HashData(res)
 			responseReceived[hash] = res
 			responseHashes = append(responseHashes, hash)
-			if len(responseReceived) > expectedResponse {
+			if len(responseReceived) >= expectedResponse {
 				replicationCompleted <- true
 				break
 			}

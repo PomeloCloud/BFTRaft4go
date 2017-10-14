@@ -1,14 +1,12 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
-	"log"
 )
 
 func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
@@ -98,74 +96,6 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 	return entries_, prevEntry
 }
 
-func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group *pb.RaftGroup, peer *pb.Peer) {
-	node := s.GetHostNTXN(peer.Host)
-	meta := s.GroupsOnboard[group.Id]
-	if node == nil {
-		log.Println("cannot get node for send peer uncommitted log entries")
-		return
-	}
-	if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
-		votes := []*pb.RequestVoteResponse{}
-		if meta.SendVotesForPeers[meta.Peer] {
-			votes = meta.Votes
-		}
-		entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
-		signData := AppendLogEntrySignData(group.Id, group.Term, prevEntry.Index, prevEntry.Term)
-		signature := s.Sign(signData)
-		appendResult, err := client.AppendEntries(ctx, &pb.AppendEntriesRequest{
-			Group:        group.Id,
-			Term:         group.Term,
-			LeaderId:     s.Id,
-			PrevLogIndex: prevEntry.Index,
-			PrevLogTerm:  prevEntry.Term,
-			Signature:    signature,
-			QuorumVotes:  votes,
-			Entries:      entries,
-		})
-		if err == nil {
-			if utils.VerifySign(s.GetHostPublicKey(node.Id), appendResult.Signature, appendResult.Hash) != nil {
-				return
-			}
-			var lastEntry *pb.LogEntry
-			if len(entries) == 0 {
-				lastEntry = prevEntry
-			} else {
-				lastEntry = entries[len(entries)-1]
-			}
-			if appendResult.Index <= lastEntry.Index && appendResult.Term <= lastEntry.Term {
-				peer.MatchIndex = appendResult.Index
-				peer.NextIndex = peer.MatchIndex + 1
-				if s.DB.Update(func(txn *badger.Txn) error {
-					return s.SavePeer(txn, peer)
-				}) != nil {
-					log.Println("cannot save peer:", peer.Id, err)
-				} else {
-					meta.GroupPeers[peer.Id] = peer
-				}
-			}
-			meta.SendVotesForPeers[meta.Peer] = !appendResult.Convinced
-		}
-	}
-}
-
-func (s *BFTRaftServer) GroupServerPeer(txn *badger.Txn, groupId uint64) *pb.Peer {
-	if groupMeta, found := s.GroupsOnboard[groupId]; found {
-		return s.GetPeer(txn, groupId, groupMeta.Peer)
-	} else {
-		return nil
-	}
-}
-
-func (s *BFTRaftServer) GroupServerPeerNTXN(groupId uint64) *pb.Peer {
-	peer := &pb.Peer{}
-	s.DB.View(func(txn *badger.Txn) error {
-		peer = s.GroupServerPeer(txn, groupId)
-		return nil
-	})
-	return peer
-}
-
 func ScanHostedGroups(db *badger.DB, serverId uint64) map[uint64]*RTGroupMeta {
 	scanKey := utils.U64Bytes(GROUP_PEERS)
 	res := map[uint64]*RTGroupMeta{}
@@ -178,7 +108,7 @@ func ScanHostedGroups(db *badger.DB, serverId uint64) map[uint64]*RTGroupMeta {
 			val := ItemValue(item)
 			peer := &pb.Peer{}
 			proto.Unmarshal(*val, peer)
-			if peer.Host == serverId {
+			if peer.Id == serverId {
 				group := GetGroupFromKV(txn, peer.Group)
 				if group != nil {
 					groups[peer.Group] = NewRTGroupMeta(
