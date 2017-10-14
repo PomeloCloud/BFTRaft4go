@@ -526,22 +526,17 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 	}
 	meta.IsBusy.Set()
 	defer meta.IsBusy.UnSet()
-	group_peers := meta.GroupPeers
-	host_peers := map[*pb.Peer]bool{}
-	for _, peer := range group_peers {
-		host_peers[peer] = true
-	}
-	num_peers := len(host_peers)
+	num_peers := len(meta.GroupPeers)
 	completion := make(chan *pb.AppendEntriesResponse, num_peers)
 	sentMsgs := 0
 	uncommittedEntries := map[uint64][]*pb.LogEntry{}
 	peerPrevEntry := map[uint64]*pb.LogEntry{}
-	for peer := range host_peers {
-		if peer.Id != leader_peer_id {
+	for peerId, peer := range meta.GroupPeers {
+		if peerId != leader_peer_id {
 			entries, prevEntry := s.PeerUncommittedLogEntries(group, peer)
-			uncommittedEntries[peer.Id] = entries
-			peerPrevEntry[peer.Id] = prevEntry
-			node := s.GetHostNTXN(peer.Id)
+			uncommittedEntries[peerId] = entries
+			peerPrevEntry[peerId] = prevEntry
+			node := s.GetHostNTXN(peerId)
 			if node == nil {
 				log.Println("cannot get node for send peer uncommitted log entries")
 				completion <- nil
@@ -555,23 +550,32 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 			signature := s.Sign(signData)
 			sentMsgs++
 			go func() {
-				if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
-					if appendResult, err := client.AppendEntries(ctx, &pb.AppendEntriesRequest{
-						Group:        group.Id,
-						Term:         group.Term,
-						LeaderId:     s.Id,
-						PrevLogIndex: prevEntry.Index,
-						PrevLogTerm:  prevEntry.Term,
-						Signature:    signature,
-						QuorumVotes:  votes,
-						Entries:      entries,
-					}); err == nil {
-						appendResult.Peer = peer.Id
-						completion <- appendResult
-					} else {
-						log.Println("append log failed:", err)
-						completion <- nil
+				peerRPChan := make(chan *pb.AppendEntriesResponse)
+				go func() {
+					if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
+						if appendResult, err := client.AppendEntries(ctx, &pb.AppendEntriesRequest{
+							Group:        group.Id,
+							Term:         group.Term,
+							LeaderId:     s.Id,
+							PrevLogIndex: prevEntry.Index,
+							PrevLogTerm:  prevEntry.Term,
+							Signature:    signature,
+							QuorumVotes:  votes,
+							Entries:      entries,
+						}); err == nil {
+							appendResult.Peer = peerId
+							peerRPChan <- appendResult
+						} else {
+							log.Println("append log failed:", err)
+							peerRPChan <- nil
+						}
 					}
+				}()
+				select {
+				case res := <-peerRPChan:
+					completion <- res
+				case <-time.After(5 * time.Second):
+					completion <- nil
 				}
 			}()
 
@@ -608,6 +612,7 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 			peer.MatchIndex = response.Index
 			peer.NextIndex = peer.MatchIndex + 1
 			meta.GroupPeers[peer.Id] = peer
+			log.Println("peer:", peer.Id, "index changed")
 			if err := s.DB.Update(func(txn *badger.Txn) error {
 				return s.SavePeer(txn, peer)
 			}); err != nil {

@@ -46,7 +46,7 @@ func NewRTGroupMeta(
 		VotedPeer:         0,
 		GroupPeers:        groupPeers,
 		Group:             group,
-		Timeout:           time.Now().Add(10 * time.Second),
+		Timeout:           time.Now().Add(20 * time.Second),
 		Role:              FOLLOWER,
 		Votes:             []*pb.RequestVoteResponse{},
 		SendVotesForPeers: map[uint64]bool{},
