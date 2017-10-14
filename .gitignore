@@ -16,3 +16,5 @@
 .idea
 BFTRaft.go.iml
 server/test_data
+test/test_data
+test/test

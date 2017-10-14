@@ -1,11 +1,13 @@
 package server
 
 import (
+	"errors"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
-	"errors"
+	"io/ioutil"
 	"log"
+	"encoding/json"
 )
 
 func GetConfig(kv *badger.DB) (*pb.ServerConfig, error) {
@@ -31,4 +33,23 @@ func GetConfig(kv *badger.DB) (*pb.ServerConfig, error) {
 		}
 	})
 	return res, err
+}
+
+type FileConfig struct {
+	Db         string
+	Address    string
+	Bootstraps []string
+}
+
+func ReadConfigFile(path string) FileConfig {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		panic(err)
+	}
+	log.Println(string(data))
+	fc := FileConfig{}
+	if err := json.Unmarshal(data, &fc); err != nil {
+		panic(err)
+	}
+	return fc
 }

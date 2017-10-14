@@ -21,7 +21,6 @@ func (s *BFTRaftServer) StartTimingWheel() {
 	go func() {
 		for true {
 			for _, meta := range s.GroupsOnboard {
-				meta.Lock.Lock()
 				if meta.Timeout.After(time.Now()) {
 					if meta.Role == FOLLOWER {
 						if meta.Leader != meta.Peer {
@@ -43,7 +42,6 @@ func (s *BFTRaftServer) StartTimingWheel() {
 						RefreshTimer(meta, 5)
 					}
 				}
-				meta.Lock.Unlock()
 			}
 			time.Sleep(100 * time.Millisecond)
 		}

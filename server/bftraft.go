@@ -119,7 +119,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 	lastLogHash := s.LastEntryHashNTXN(groupId)
 	thisPeer := s.GroupServerPeerNTXN(groupId)
 	thisPeerId := uint64(0)
-	// log.Println("append log to", s.Id, "entries:", len(req.Entries))
+	// log.Println("append log from", req.LeaderId, "to", s.Id, "entries:", len(req.Entries))
 	if thisPeer != nil {
 		thisPeerId = thisPeer.Id
 	}
@@ -509,7 +509,7 @@ func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_
 			}()
 		}
 	}
-	log.Println("sending log to", sentMsgs, "followers with", num_peers, "peers")
+	// log.Println("sending log to", sentMsgs, "followers with", num_peers, "peers")
 	for i := 0; i < sentMsgs; i++ {
 		<-completion
 	}
