@@ -8,6 +8,7 @@ import (
 	"github.com/dgraph-io/badger"
 	"sync"
 	"time"
+	"log"
 )
 
 func RequestVoteRequestSignData(req *pb.RequestVoteRequest) []byte {
@@ -69,6 +70,9 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 			continue
 		}
 		node := s.GetHostNTXN(nodeId)
+		if node == nil {
+			log.Println("cannot get log for request votes")
+		}
 		go func() {
 			if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 				if voteResponse, err := client.RequestVote(context.Background(), request); err == nil {

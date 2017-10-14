@@ -56,7 +56,7 @@ func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 				return err
 			}
 		}); err != nil {
-			log.Println(err)
+			log.Println("cannot append entry to local when pulling", err)
 			return
 		}
 		if needCommit {

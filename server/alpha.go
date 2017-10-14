@@ -63,9 +63,8 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 	// Force a snapshot sync for group members by asking alpha nodes for it
 	// This function should be invoked every time it startup
 	// First we need to get all alpha nodes
-	alphaRPCs := s.Client.AlphaRPCs.Get()
 	// get alpha members from alpha nodes
-	res := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
+	res := utils.MajorityResponse(s.Client.AlphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupMembers(context.Background(), &spb.GroupId{
 			GroupId: utils.ALPHA_GROUP,
 		}); err == nil {
@@ -106,7 +105,7 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 		if group == nil {
 			log.Println("cannot find alpha group at local, will pull from remote")
 			// alpha group cannot be found, it need to be generated
-			res := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
+			res := utils.MajorityResponse(s.Client.AlphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
 				if res, err := client.GetGroupContent(context.Background(), &spb.GroupId{GroupId: utils.ALPHA_GROUP}); err == nil {
 					if data, err2 := proto.Marshal(res); err2 == nil {
 						return res, data
@@ -114,7 +113,7 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 						return nil, []byte{}
 					}
 				} else {
-					log.Println(err)
+					log.Println("cannot get group content for sync alpha", err)
 					return nil, []byte{}
 				}
 			})

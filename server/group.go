@@ -137,8 +137,12 @@ func (s *BFTRaftServer) GetGroupHostsNTXN(groupId uint64) []*pb.Host {
 func (s *BFTRaftServer) GroupLeader(groupId uint64) *pb.GroupLeader {
 	res := &pb.GroupLeader{}
 	if meta, onboard := s.GroupsOnboard[groupId]; onboard {
+		node := s.GetHostNTXN(meta.Leader)
+		if node == nil {
+			log.Println("cannot get node for group leader")
+		}
 		res = &pb.GroupLeader{
-			Node: s.GetHostNTXN(meta.Leader),
+			Node: node,
 			Accuate: true,
 		}
 	} else {

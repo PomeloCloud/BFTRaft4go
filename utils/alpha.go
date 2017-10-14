@@ -19,7 +19,7 @@ func AlphaNodes(servers []string) []*spb.Host {
 		}); err == nil {
 			return nodes, NodesSignData(nodes.Nodes)
 		} else {
-			log.Println(err)
+			log.Println("cannot get alpha group hosts when get alpha nodes")
 			return (*spb.GroupNodesResponse)(nil), []byte{}
 		}
 	})

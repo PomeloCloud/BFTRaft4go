@@ -15,6 +15,7 @@ func GetClusterRPC(addr string) (spb.BFTRaftClient, error) {
 	if cc, err := GetClientConn(addr); err == nil {
 		return spb.NewBFTRaftClient(cc), nil
 	} else {
+		log.Println("cannot get connection to", addr, err)
 		return nil, err
 	}
 }

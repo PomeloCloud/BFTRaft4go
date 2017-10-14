@@ -38,12 +38,13 @@ func (s *BFTRaftServer) SMRegHost(arg *[]byte, entry *pb.LogEntry) []byte {
 			if err := s.SaveHost(txn, &node); err == nil {
 				return nil
 			} else {
+				log.Println("error on saving host:", err)
 				return err
 			}
 		})
 		return []byte{1}
 	} else {
-		log.Println(err)
+		log.Println("error on decoding reg host:", err)
 		return []byte{0}
 	}
 }
@@ -61,6 +62,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			NextIndex:  0,
 			MatchIndex: 0,
 		}
+		log.Println("SM node", node, "join", groupId)
 		if err := s.DB.Update(func(txn *badger.Txn) error {
 			if s.GetHost(txn, node) == nil {
 				return errors.New("cannot find node")
@@ -80,14 +82,18 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			// first, save the peer
 			return s.SavePeer(txn, &peer)
 		}); err != nil {
-			log.Println(err)
+			log.Println("cannot save peer for join", err)
 			return []byte{0}
 		}
 		// next, check if this node is in the groupId. Add it on board if found.
 		// because membership logs entries will be replicated on every node
 		// this function will also be executed every where
 		if meta, found := s.GroupsOnboard[groupId]; found {
-			address := s.GetHostNTXN(entry.Command.ClientId).ServerAddr
+			node := s.GetHostNTXN(entry.Command.ClientId)
+			if node == nil {
+				log.Println("cannot get node for SM node join")
+			}
+			address := node.ServerAddr
 			inv := &pb.GroupInvitation{
 				Group:  groupId,
 				Leader: meta.Leader,
@@ -100,13 +106,13 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 				log.Println("we have new node ", node, "join group", groupId)
 				return []byte{1}
 			} else {
-				log.Println(err)
+				log.Println("cannot get cluster rpc for node join",err)
 				return []byte{0}
 			}
 		}
 		return []byte{1}
 	} else {
-		log.Println(err)
+		log.Println("cannot decode node join data",err)
 		return []byte{0}
 	}
 }
@@ -116,14 +122,14 @@ func (s *BFTRaftServer) SMNewClient(arg *[]byte, entry *pb.LogEntry) []byte {
 	client := pb.Host{}
 	err := proto.Unmarshal(*arg, &client)
 	if err != nil {
-		log.Println(err)
+		log.Println("cannot decode new client data", err)
 		return []byte{0}
 	}
 	client.Id = utils.HashPublicKeyBytes(client.PublicKey)
 	if err := s.SaveHostNTXN(&client); err == nil {
 		return []byte{1}
 	} else {
-		log.Println(err)
+		log.Println("cannot save host for new client", err)
 		return []byte{0}
 	}
 }
@@ -138,7 +144,7 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 	group := pb.RaftGroup{}
 	err := proto.Unmarshal(*arg, &group)
 	if err != nil {
-		log.Println(err)
+		log.Println("cannot decode new group data", err)
 		return []byte{0}
 	}
 	// replication cannot be below 1 and cannot larger than 100
@@ -179,7 +185,7 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 		}
 		return utils.U64Bytes(entry.Index)
 	} else {
-		log.Println(err)
+		log.Println("cannot save new group")
 		return []byte{0}
 	}
 }

@@ -3,7 +3,9 @@ package server
 import (
 	"bytes"
 	"crypto/rsa"
+	"errors"
 	"flag"
+	"fmt"
 	"github.com/PomeloCloud/BFTRaft4go/client"
 	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
@@ -57,11 +59,13 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	}
 	group := s.GetGroupNTXN(group_id)
 	if group == nil {
+		log.Println("cannot find group:", group_id, "on exec logs")
 		return response, nil
 	}
 	leader_node := s.GroupLeader(group_id).Node
 	leader_peer := s.GetPeerNTXN(group_id, leader_node.Id)
 	if leader_peer == nil {
+		log.Println("cannot find leader peer for group:", group_id, "on exec logs")
 		return response, nil
 	}
 	if leader_node := s.GetHostNTXN(leader_peer.Host); leader_node != nil {
@@ -103,6 +107,8 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				log.Println("append entry on leader failed:", err)
 			}
 		}
+	} else {
+		log.Println("cannot get node to execute command to group leader")
 	}
 	response.Signature = s.Sign(utils.CommandSignData(
 		response.Group, response.NodeId, response.RequestId, response.Result,
@@ -112,7 +118,12 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 
 func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	groupId := req.Group
-	groupMeta := s.GroupsOnboard[groupId]
+	groupMeta, onboard := s.GroupsOnboard[groupId]
+	if !onboard {
+		errStr := fmt.Sprint("cannot append, group ", req.Group, " not on ", s.Id)
+		log.Println(errStr)
+		return nil, errors.New(errStr)
+	}
 	group := groupMeta.Group
 	reqLeaderId := req.LeaderId
 	leaderPeer := groupMeta.GroupPeers[reqLeaderId]
@@ -249,6 +260,10 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 									}
 								}()
 							}
+						} else {
+							if node == nil {
+								log.Println("cannot get node ", peer.Host, " for send approval append logs")
+							}
 						}
 					}
 					if s.WaitLogApproved(groupId, entry.Index) {
@@ -272,15 +287,22 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 								Signature: s.Sign(signData),
 							})
 						}
+					} else {
+						log.Println("cannot get node", entry.Command.ClientId, "for response command")
 					}
 					log.Println("done appending log", entry.Index, "for group", groupId, "total", len(req.Entries))
 				}
 				response.Successed = true
 			}
 		} else {
-			log.Println(s.Id, "log positation mismatch")
+			log.Println(
+				s.Id, "log positation mismatch: prev index",
+				req.PrevLogIndex, "-", lastLogIdx,
+				"next index", req.Entries[0].Index, "-", nextLogIdx,
+			)
 		}
 	}
+	// log.Println("report back to leader index:", response.Index)
 	return response, nil
 }
 
@@ -426,9 +448,14 @@ func (s *BFTRaftServer) GroupMembers(ctx context.Context, req *pb.GroupId) (*pb.
 	})
 	members := []*pb.GroupMember{}
 	for _, p := range peersMap {
+		host := s.GetHostNTXN(p.Host)
+		if host == nil {
+			log.Println("cannot get host for group members")
+			continue
+		}
 		members = append(members, &pb.GroupMember{
 			Peer: p,
-			Host: s.GetHostNTXN(p.Host),
+			Host: host,
 		})
 	}
 	return &pb.GroupMembersResponse{

@@ -102,6 +102,7 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 	node := s.GetHostNTXN(peer.Host)
 	meta := s.GroupsOnboard[group.Id]
 	if node == nil {
+		log.Println("cannot get node for send peer uncommitted log entries")
 		return
 	}
 	if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
@@ -138,7 +139,9 @@ func (s *BFTRaftServer) SendPeerUncommittedLogEntries(ctx context.Context, group
 				if s.DB.Update(func(txn *badger.Txn) error {
 					return s.SavePeer(txn, peer)
 				}) != nil {
-					log.Println(err)
+					log.Println("cannot save peer:", peer.Id, err)
+				} else {
+					meta.GroupPeers[peer.Id] = peer
 				}
 			}
 			meta.SendVotesForPeers[meta.Peer] = !appendResult.Convinced

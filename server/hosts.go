@@ -32,7 +32,7 @@ func (s *BFTRaftServer) GetHost(txn *badger.Txn, nodeId uint64) *pb.Host {
 		s.Hosts.Set(cacheKey, &node, cache.DefaultExpiration)
 		return &node
 	} else {
-		log.Println(err)
+		log.Println("cannot get host", nodeId,"on", s.Id,":", err)
 		return nil
 	}
 }
@@ -53,6 +53,7 @@ func (s *BFTRaftServer) GetHostPublicKey(nodeId uint64) *rsa.PublicKey {
 	}
 	node := s.GetHostNTXN(nodeId)
 	if node == nil {
+		log.Println("cannot get node for get it's public key")
 		return nil
 	}
 	if key, err := utils.ParsePublicKey(node.PublicKey); err == nil {

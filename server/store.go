@@ -31,7 +31,7 @@ func ItemValue(item *badger.Item) *[]byte {
 	if val, err := item.Value(); err == nil {
 		return &val
 	} else {
-		log.Println(err)
+		log.Println("cannot get value:", err)
 		return nil
 	}
 }
