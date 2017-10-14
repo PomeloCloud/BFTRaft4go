@@ -174,6 +174,7 @@ func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntries
 		return response, nil
 	}
 	if len(req.Entries) > 0 {
+		log.Println("appending new entries for:", groupId, "total", len(req.Entries))
 		// check last log matches the first provided by the leader
 		// this strategy assumes split brain will never happened (on internet)
 		// the leader will always provide the entries no more than it needed
