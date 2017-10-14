@@ -1,0 +1,5 @@
+{
+  "Db": "test_data/TestColdStart2",
+  "Address": "localhost:4562",
+  "Bootstraps": ["localhost:4561"]
+}
