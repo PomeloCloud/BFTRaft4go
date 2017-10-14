@@ -70,7 +70,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 				// when joined a groupId, the node should do all of
 				// those following things by itself after the log is replicated
 				log.Println("skip add current node join from sm")
-				return errors.New("join should be processed")
+				return nil
 			}
 			group := s.GetGroup(txn, groupId)
 			// check if this group exceeds it's replication
@@ -281,6 +281,7 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 			return errors.New("receive invitation timeout")
 		}
 	} else {
+		log.Println("cannot join node, remote end rejected")
 		return errors.New("remote error")
 	}
 }

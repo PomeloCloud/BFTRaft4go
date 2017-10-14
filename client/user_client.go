@@ -100,7 +100,7 @@ func (brc *BFTRaftClient) GetGroupLeader(groupId uint64) spb.BFTRaftClient {
 			return leader
 		}
 	} else {
-		log.Println("group", groupId, "has no leader")
+		log.Println(brc.Id, ", group", groupId, "has no leader")
 	}
 	return nil
 }
@@ -128,15 +128,20 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 		close(brc.CmdResChan[groupId][reqId])
 		delete(brc.CmdResChan[groupId], reqId)
 	}()
-	if cmdRes, err := leader.ExecCommand(context.Background(), cmdReq); err == nil {
-		// TODO: verify signature
-		// TODO: update leader if needed
-		// TODO: verify response matches request
-		go func() {
+	go func() {
+		if cmdRes, err := leader.ExecCommand(context.Background(), cmdReq); err == nil {
+			// TODO: verify signature
+			// TODO: update leader if needed
+			// TODO: verify response matches request
 			brc.CmdResChan[groupId][reqId] <- cmdRes.Result
-		}()
+
+		}
+	}()
+	hosts := brc.GetGroupHosts(groupId)
+	if hosts == nil {
+		return nil, errors.New("cannot get group hosts")
 	}
-	expectedResponse := len(*brc.GetGroupHosts(groupId)) / 2
+	expectedResponse := len(*hosts) / 2
 	responseReceived := map[uint64][]byte{}
 	responseHashes := []uint64{}
 	replicationCompleted := make(chan bool, 1)
