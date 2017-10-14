@@ -103,7 +103,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 		select {
 		case <-adequateVotes:
 			s.BecomeLeader(meta)
-		case <-time.After(5000 * time.Second):
+		case <-time.After(10 * time.Second):
 			close(voteReceived)
 		}
 	}()

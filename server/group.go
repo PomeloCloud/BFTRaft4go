@@ -7,10 +7,10 @@ import (
 	"github.com/patrickmn/go-cache"
 	"github.com/tevino/abool"
 	"log"
-	"strconv"
-	"sync"
-	"time"
 	"math/rand"
+	"strconv"
+	sync "github.com/90TechSAS/go-recursive-mutex"
+	"time"
 )
 
 const (
@@ -24,7 +24,6 @@ type RTGroupMeta struct {
 	Peer              uint64
 	Leader            uint64
 	VotedPeer         uint64
-	Lock              sync.RWMutex
 	GroupPeers        map[uint64]*pb.Peer
 	Group             *pb.RaftGroup
 	Timeout           time.Time
@@ -32,6 +31,7 @@ type RTGroupMeta struct {
 	Votes             []*pb.RequestVoteResponse
 	SendVotesForPeers map[uint64]bool // key is peer id
 	IsBusy            *abool.AtomicBool
+	Lock              *sync.RecursiveMutex
 }
 
 func NewRTGroupMeta(
@@ -44,14 +44,14 @@ func NewRTGroupMeta(
 		Peer:              peer,
 		Leader:            leader,
 		VotedPeer:         0,
-		Lock:              sync.RWMutex{},
 		GroupPeers:        groupPeers,
 		Group:             group,
-		Timeout:           time.Now(),
+		Timeout:           time.Now().Add(10 * time.Second),
 		Role:              FOLLOWER,
 		Votes:             []*pb.RequestVoteResponse{},
 		SendVotesForPeers: map[uint64]bool{},
 		IsBusy:            abool.NewBool(false),
+		Lock:              &sync.RecursiveMutex{},
 	}
 }
 
@@ -142,7 +142,7 @@ func (s *BFTRaftServer) GroupLeader(groupId uint64) *pb.GroupLeader {
 			log.Println("cannot get node for group leader")
 		}
 		res = &pb.GroupLeader{
-			Node: node,
+			Node:    node,
 			Accuate: true,
 		}
 	} else {
