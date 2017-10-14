@@ -119,13 +119,13 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	groupId := req.Group
 	groupMeta, onboard := s.GroupsOnboard[groupId]
-	groupMeta.Lock.Lock()
-	defer groupMeta.Lock.Unlock()
 	if !onboard {
 		errStr := fmt.Sprint("cannot append, group ", req.Group, " not on ", s.Id)
 		log.Println(errStr)
 		return nil, errors.New(errStr)
 	}
+	groupMeta.Lock.Lock()
+	defer groupMeta.Lock.Unlock()
 	group := groupMeta.Group
 	reqLeaderId := req.LeaderId
 	leaderPeer := groupMeta.GroupPeers[reqLeaderId]

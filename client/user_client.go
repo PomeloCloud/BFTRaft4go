@@ -136,26 +136,35 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 			// TODO: verify response matches request
 			brc.CmdResChan[groupId][reqId] <- cmdRes.Result
 
+		} else {
+			log.Println("cannot exec on leader:", err)
 		}
 	}()
 	hosts := brc.GetGroupHosts(groupId)
 	if hosts == nil {
 		return nil, errors.New("cannot get group hosts")
 	}
-	expectedResponse := len(*hosts) / 2
+	expectedResponse := len(*hosts)/2
+	if expectedResponse == 0 {
+		expectedResponse = 1
+	}
 	responseReceived := map[uint64][]byte{}
 	responseHashes := []uint64{}
 	replicationCompleted := make(chan bool, 1)
+	wg := sync.WaitGroup{}
+	wg.Add(expectedResponse)
 	go func() {
-		for res := range brc.CmdResChan[groupId][reqId] {
+		for i := 0; i < expectedResponse; i++ {
+			res := <-brc.CmdResChan[groupId][reqId]
 			hash := utils.HashData(res)
 			responseReceived[hash] = res
 			responseHashes = append(responseHashes, hash)
-			if len(responseReceived) >= expectedResponse {
-				replicationCompleted <- true
-				break
-			}
+			wg.Done()
 		}
+	}()
+	go func() {
+		wg.Wait()
+		replicationCompleted <- true
 	}()
 	select {
 	case <-replicationCompleted:
