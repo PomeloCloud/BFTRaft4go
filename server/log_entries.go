@@ -47,8 +47,8 @@ func (liter *LogEntryIterator) Close() {
 	liter.data.Close()
 }
 
-func (s *BFTRaftServer) ReversedLogIterator(txn *badger.Txn, group uint64) LogEntryIterator {
-	keyPrefix := ComposeKeyPrefix(group, LOG_ENTRIES)
+func (m *RTGroup) ReversedLogIterator(txn *badger.Txn) LogEntryIterator {
+	keyPrefix := ComposeKeyPrefix(m.Group.Id, LOG_ENTRIES)
 	iter := txn.NewIterator(badger.IteratorOptions{Reverse: true})
 	iter.Seek(append(keyPrefix, utils.U64Bytes(^uint64(0))...)) // search from max possible index
 	return LogEntryIterator{
@@ -57,17 +57,17 @@ func (s *BFTRaftServer) ReversedLogIterator(txn *badger.Txn, group uint64) LogEn
 	}
 }
 
-func (s *BFTRaftServer) LastLogEntry(txn *badger.Txn, group uint64) *pb.LogEntry {
-	iter := s.ReversedLogIterator(txn, group)
+func (m *RTGroup) LastLogEntry(txn *badger.Txn) *pb.LogEntry {
+	iter := m.ReversedLogIterator(txn)
 	entry := iter.Current()
 	iter.Close()
 	return entry
 }
 
-func (s *BFTRaftServer) LastLogEntryNTXN(group uint64) *pb.LogEntry {
+func (m *RTGroup) LastLogEntryNTXN() *pb.LogEntry {
 	entry := &pb.LogEntry{}
-	s.DB.View(func(txn *badger.Txn) error {
-		iter := s.ReversedLogIterator(txn, group)
+	m.Server.DB.View(func(txn *badger.Txn) error {
+		iter := m.ReversedLogIterator(txn)
 		entry = iter.Current()
 		iter.Close()
 		return nil
@@ -75,19 +75,19 @@ func (s *BFTRaftServer) LastLogEntryNTXN(group uint64) *pb.LogEntry {
 	return entry
 }
 
-func (s *BFTRaftServer) LastEntryHash(txn *badger.Txn, group_id uint64) []byte {
+func (m *RTGroup) LastEntryHash(txn *badger.Txn) []byte {
 	var hash []byte
-	lastLog := s.LastLogEntry(txn, group_id)
+	lastLog := m.LastLogEntry(txn)
 	if lastLog == nil {
-		hash, _ = utils.SHA1Hash([]byte(fmt.Sprint("GROUP:", group_id)))
+		hash, _ = utils.SHA1Hash([]byte(fmt.Sprint("GROUP:", m.Group.Id)))
 	} else {
 		hash = lastLog.Hash
 	}
 	return hash
 }
 
-func (s *BFTRaftServer) LastEntryIndex(txn *badger.Txn, groupId uint64) uint64 {
-	lastLog := s.LastLogEntry(txn, groupId)
+func (m *RTGroup) LastEntryIndex(txn *badger.Txn) uint64 {
+	lastLog := m.LastLogEntry(txn)
 	index := uint64(0)
 	if lastLog != nil {
 		index = lastLog.Index
@@ -95,19 +95,19 @@ func (s *BFTRaftServer) LastEntryIndex(txn *badger.Txn, groupId uint64) uint64 {
 	return index
 }
 
-func (s *BFTRaftServer) LastEntryIndexNTXN(groupId uint64) uint64 {
+func (m *RTGroup) LastEntryIndexNTXN() uint64 {
 	index := uint64(0)
-	s.DB.View(func(txn *badger.Txn) error {
-		index = s.LastEntryIndex(txn, groupId)
+	m.Server.DB.View(func(txn *badger.Txn) error {
+		index = m.LastEntryIndex(txn)
 		return nil
 	})
 	return index
 }
 
-func (s *BFTRaftServer) LastEntryHashNTXN(group_id uint64) []byte {
+func (m *RTGroup) LastEntryHashNTXN() []byte {
 	hash := []byte{}
-	s.DB.View(func(txn *badger.Txn) error {
-		hash = s.LastEntryHash(txn, group_id)
+	m.Server.DB.View(func(txn *badger.Txn) error {
+		hash = m.LastEntryHash(txn)
 		return nil
 	})
 	return hash
@@ -117,13 +117,16 @@ func LogEntryKey(groupId uint64, entryIndex uint64) []byte {
 	return append(ComposeKeyPrefix(groupId, LOG_ENTRIES), utils.U64Bytes(entryIndex)...)
 }
 
-func (s *BFTRaftServer) AppendEntryToLocal(txn *badger.Txn, group *pb.RaftGroup, entry *pb.LogEntry) error {
+func (m *RTGroup) AppendEntryToLocal(txn *badger.Txn, entry *pb.LogEntry) error {
 	group_id := entry.Command.Group
+	if group_id != m.Group.Id {
+		panic("log group id not match the actual group work on it")
+	}
 	key := LogEntryKey(group_id, entry.Index)
 	_, err := txn.Get(key)
 	if err == badger.ErrKeyNotFound {
 		cmd := entry.Command
-		hash, _ := utils.LogHash(s.LastEntryHash(txn, group_id), entry.Index, cmd.FuncId, cmd.Arg)
+		hash, _ := utils.LogHash(m.LastEntryHash(txn), entry.Index, cmd.FuncId, cmd.Arg)
 		if !bytes.Equal(hash, entry.Hash) {
 			return errors.New("Log entry hash mismatch")
 		}
@@ -141,8 +144,8 @@ func (s *BFTRaftServer) AppendEntryToLocal(txn *badger.Txn, group *pb.RaftGroup,
 	}
 }
 
-func (s *BFTRaftServer) GetLogEntry(txn *badger.Txn, groupId uint64, entryIndex uint64) *pb.LogEntry {
-	key := LogEntryKey(groupId, entryIndex)
+func (m *RTGroup) GetLogEntry(txn *badger.Txn, entryIndex uint64) *pb.LogEntry {
+	key := LogEntryKey(m.Group.Id, entryIndex)
 	if item, err := txn.Get(key); err == nil {
 		return LogEntryFromKVItem(item)
 	} else {
@@ -167,9 +170,9 @@ func ApproveAppendSignData(res *pb.ApproveAppendResponse) []byte {
 	return append(bs1, utils.U64Bytes(res.Index)...)
 }
 
-func (s *BFTRaftServer) CommitGroupLog(groupId uint64, entry *pb.LogEntry) *[]byte {
+func (m *RTGroup) CommitGroupLog(groupId uint64, entry *pb.LogEntry) *[]byte {
 	funcId := entry.Command.FuncId
-	fun := s.FuncReg[groupId][funcId]
+	fun := m.Server.FuncReg[groupId][funcId]
 	input := entry.Command.Arg
 	result := fun(&input, entry)
 	return &result

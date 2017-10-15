@@ -88,7 +88,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 		// next, check if this node is in the groupId. Add it on board if found.
 		// because membership logs entries will be replicated on every node
 		// this function will also be executed every where
-		if meta, found := s.GroupsOnboard[groupId]; found {
+		if meta := s.GetOnboardGroup(groupId); meta != nil {
 			node := s.GetHostNTXN(entry.Command.ClientId)
 			if node == nil {
 				log.Println("cannot get node for SM node join")
@@ -102,17 +102,17 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			inv.Signature = s.Sign(InvitationSignature(inv))
 			if client, err := utils.GetClusterRPC(address); err == nil {
 				go client.SendGroupInvitation(context.Background(), inv)
-				s.GroupsOnboard[groupId].GroupPeers[peer.Id] = &peer
+				meta.GroupPeers[peer.Id] = &peer
 				log.Println("we have new node ", node.Id, "join group", groupId)
 				return []byte{1}
 			} else {
-				log.Println("cannot get cluster rpc for node join",err)
+				log.Println("cannot get cluster rpc for node join", err)
 				return []byte{0}
 			}
 		}
 		return []byte{1}
 	} else {
-		log.Println("cannot decode node join data",err)
+		log.Println("cannot decode node join data", err)
 		return []byte{0}
 	}
 }
@@ -174,16 +174,21 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 		return nil
 	}); err == nil {
 		if s.Id == hostId {
-			s.GroupsOnboard[peer.Group] = NewRTGroupMeta(
-				peer.Id, hostId,
-				map[uint64]*pb.Peer{peer.Id: &peer}, &group,
+			meta := NewRTGroup(
+				s, hostId,
+				map[uint64]*pb.Peer{peer.Id: &peer},
+				&group, LEADER,
 			)
+			s.SetOnboardGroup(meta)
 			go func() {
 				s.PendingNewGroups[group.Id] <- nil
 			}()
 		}
 		return utils.U64Bytes(entry.Index)
 	} else {
+		go func() {
+			s.PendingNewGroups[group.Id] <- err
+		}()
 		log.Println("cannot save new group")
 		return []byte{0}
 	}
@@ -275,9 +280,11 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 				leader := utils.PickMajority(invLeaders)
 				log.Println("received enough invitations, will join to group", groupId, "with leader", leader)
 				groupPeers[s.Id] = peer
-				s.GroupsOnboard[peer.Group] = NewRTGroupMeta(
-					peer.Id, leader, groupPeers, group,
+				meta := NewRTGroup(
+					s, leader, groupPeers,
+					group, FOLLOWER,
 				)
+				s.SetOnboardGroup(meta)
 				log.Println("node", peer.Id, "joined group", groupId)
 			}
 			return nil

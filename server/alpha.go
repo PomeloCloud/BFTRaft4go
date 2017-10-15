@@ -50,11 +50,13 @@ func (s *BFTRaftServer) ColdStart() {
 	}); err != nil {
 		log.Fatal("cannot save to cold start:", err)
 	}
-	s.GroupsOnboard[utils.ALPHA_GROUP] = NewRTGroupMeta(
-		thisPeer.Id, s.Id,
-		map[uint64]*spb.Peer{thisPeer.Id: thisPeer}, alphaGroup,
+	newMeta := NewRTGroup(
+		s, s.Id,
+		map[uint64]*spb.Peer{thisPeer.Id: thisPeer},
+		alphaGroup, LEADER,
 	)
-	s.GroupsOnboard[utils.ALPHA_GROUP].Role = LEADER
+	newMeta.Role = LEADER
+	s.SetOnboardGroup(newMeta)
 	s.Client.AlphaRPCs.ResetBootstrap([]string{s.Opts.Address})
 }
 

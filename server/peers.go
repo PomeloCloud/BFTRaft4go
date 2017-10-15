@@ -6,7 +6,7 @@ import (
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
-	"github.com/patrickmn/go-cache"
+	"strconv"
 )
 
 func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
@@ -26,43 +26,15 @@ func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
 	return peers
 }
 
-func (s *BFTRaftServer) GetPeer(txn *badger.Txn, group uint64, peer_id uint64) *pb.Peer {
-	cacheKey := fmt.Sprint(group, "-", peer_id)
-	cachedPeer, cachedFound := s.Peers.Get(cacheKey)
-	if cachedFound {
-		return cachedPeer.(*pb.Peer)
-	}
-	dbKey := append(ComposeKeyPrefix(group, GROUP_PEERS), utils.U64Bytes(peer_id)...)
-	item, _ := txn.Get(dbKey)
-	data := ItemValue(item)
-	if data == nil {
-		return nil
-	} else {
-		peer := pb.Peer{}
-		proto.Unmarshal(*data, &peer)
-		s.Peers.Set(cacheKey, &peer, cache.DefaultExpiration)
-		return &peer
-	}
-}
-
-func (s *BFTRaftServer) GetPeerNTXN(group uint64, peer_id uint64) *pb.Peer {
-	peer := &pb.Peer{}
-	s.DB.View(func(txn *badger.Txn) error {
-		peer = s.GetPeer(txn, group, peer_id)
-		return nil
-	})
-	return peer
-}
-
-func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.Peer) ([]*pb.LogEntry, *pb.LogEntry) {
+func (m *RTGroup) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.Peer) ([]*pb.LogEntry, *pb.LogEntry) {
 	entries_ := []*pb.LogEntry{}
 	prevEntry := &pb.LogEntry{
 		Term:  0,
 		Index: 0,
 	}
-	s.DB.View(func(txn *badger.Txn) error {
+	m.Server.DB.View(func(txn *badger.Txn) error {
 		entries := []*pb.LogEntry{}
-		iter := s.ReversedLogIterator(txn, group.Id)
+		iter := m.ReversedLogIterator(txn)
 		nextLogIdx := peer.NextIndex
 		for true {
 			entry := iter.Current()
@@ -96,13 +68,13 @@ func (s *BFTRaftServer) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.
 	return entries_, prevEntry
 }
 
-func ScanHostedGroups(db *badger.DB, serverId uint64) map[uint64]*RTGroupMeta {
+func (s *BFTRaftServer) ScanHostedGroups(serverId uint64) map[uint64]*RTGroup {
 	scanKey := utils.U64Bytes(GROUP_PEERS)
-	res := map[uint64]*RTGroupMeta{}
-	db.View(func(txn *badger.Txn) error {
+	res := map[uint64]*RTGroup{}
+	s.DB.View(func(txn *badger.Txn) error {
 		iter := txn.NewIterator(badger.IteratorOptions{})
 		iter.Seek(scanKey)
-		groups := map[uint64]*RTGroupMeta{}
+		groups := map[uint64]*RTGroup{}
 		for iter.ValidForPrefix(scanKey) {
 			item := iter.Item()
 			val := ItemValue(item)
@@ -111,9 +83,10 @@ func ScanHostedGroups(db *badger.DB, serverId uint64) map[uint64]*RTGroupMeta {
 			if peer.Id == serverId {
 				group := GetGroupFromKV(txn, peer.Group)
 				if group != nil {
-					groups[peer.Group] = NewRTGroupMeta(
-						peer.Id, 0,
-						GetGroupPeersFromKV(txn, peer.Group), group,
+					groups[peer.Group] = NewRTGroup(
+						s, 0,
+						GetGroupPeersFromKV(txn, peer.Group),
+						group, FOLLOWER,
 					)
 				}
 			}
@@ -122,12 +95,16 @@ func ScanHostedGroups(db *badger.DB, serverId uint64) map[uint64]*RTGroupMeta {
 		groups = res
 		return nil
 	})
+	for groupId, meta := range res {
+		k := strconv.Itoa(int(groupId))
+		s.GroupsOnboard.Set(k, meta)
+	}
 	return res
 }
 
-func (s *BFTRaftServer) OnboardGroupPeersSlice(groupId uint64) []*pb.Peer {
+func (m *RTGroup) OnboardGroupPeersSlice(groupId uint64) []*pb.Peer {
 	peers := []*pb.Peer{}
-	for _, peer := range s.GroupsOnboard[groupId].GroupPeers {
+	for _, peer := range m.GroupPeers {
 		peers = append(peers, peer)
 	}
 	return peers

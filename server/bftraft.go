@@ -12,6 +12,7 @@ import (
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
+	cmap "github.com/orcaman/concurrent-map"
 	"github.com/patrickmn/go-cache"
 	"golang.org/x/net/context"
 	"log"
@@ -31,7 +32,7 @@ type BFTRaftServer struct {
 	Opts              Options
 	DB                *badger.DB
 	FuncReg           map[uint64]map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte
-	GroupsOnboard     map[uint64]*RTGroupMeta
+	GroupsOnboard     cmap.ConcurrentMap
 	GroupInvitations  map[uint64]chan *pb.GroupInvitation
 	PendingNewGroups  map[uint64]chan error
 	Peers             *cache.Cache
@@ -81,9 +82,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				return client.ExecCommand(ctx, cmd)
 			}
 		} else if isRegNewNode || s.VerifyCommandSign(cmd) { // the node is the leader to this group
-			groupMeta := s.GroupsOnboard[group_id]
-			groupMeta.Lock.Lock()
-			defer groupMeta.Lock.Unlock()
+			groupMeta := s.GetOnboardGroup(group_id)
 			response.LeaderId = leader_peer.Id
 			var index uint64
 			var hash []byte
@@ -118,14 +117,12 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 
 func (s *BFTRaftServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	groupId := req.Group
-	groupMeta, onboard := s.GroupsOnboard[groupId]
-	if !onboard {
+	groupMeta := s.GetOnboardGroup(groupId)
+	if groupMeta == nil {
 		errStr := fmt.Sprint("cannot append, group ", req.Group, " not on ", s.Id)
 		log.Println(errStr)
 		return nil, errors.New(errStr)
 	}
-	groupMeta.Lock.Lock()
-	defer groupMeta.Lock.Unlock()
 	group := groupMeta.Group
 	reqLeaderId := req.LeaderId
 	leaderPeer := groupMeta.GroupPeers[reqLeaderId]
@@ -322,8 +319,8 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		Signature: []byte{},
 	}
 	response.Signature = s.Sign(ApproveAppendSignData(response))
-	_, found := s.GroupsOnboard[groupId]
-	if !found {
+	groupMeta := s.GetOnboardGroup(groupId)
+	if groupMeta == nil {
 		log.Println("cannot approve append due to unexisted group")
 		return response, nil
 	}
@@ -333,18 +330,13 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 		log.Println("cannot approve append due to unexisted peer")
 		return response, nil
 	}
-	if _, found := s.GroupsOnboard[groupId]; !found {
-		log.Println("cannot approve append, this peer is not in group")
-		return response, nil
-	}
 	response.Peer = s.Id
 	if utils.VerifySign(s.GetHostPublicKey(peer.Id), req.Signature, req.Hash) != nil {
 		log.Println("cannot approve append due to signature verfication")
 		return response, nil
 	}
-	meta := s.GroupsOnboard[groupId]
 	lastIndex := s.LastEntryIndexNTXN(groupId)
-	if (lastIndex == req.Index && meta.Leader == s.Id) || lastIndex > req.Index {
+	if (lastIndex == req.Index && groupMeta.Leader == s.Id) || lastIndex > req.Index {
 		// this node will never have a chance to provide it's vote to the log
 		// will check correctness and vote specifically for client peer without broadcasting
 		s.DB.View(func(txn *badger.Txn) error {
@@ -374,7 +366,10 @@ func (s *BFTRaftServer) ApproveAppend(ctx context.Context, req *pb.AppendEntries
 func (s *BFTRaftServer) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
 	// all of the leader transfer verification happens here
 	groupId := req.Group
-	meta := s.GroupsOnboard[groupId]
+	meta := s.GetOnboardGroup(groupId)
+	if meta == nil {
+		return nil, errors.New("cannot request vote, cannot find the group")
+	}
 	group := meta.Group
 	lastLogEntry := s.LastLogEntryNTXN(groupId)
 	vote := &pb.RequestVoteResponse{
@@ -518,14 +513,7 @@ func (s *BFTRaftServer) RegisterRaftFunc(group uint64, func_id uint64, fn func(a
 }
 
 func (s *BFTRaftServer) SendFollowersHeartbeat(ctx context.Context, leader_peer_id uint64, group *pb.RaftGroup) {
-	meta := s.GroupsOnboard[group.Id]
-	meta.Lock.Lock()
-	defer meta.Lock.Unlock()
-	if meta.IsBusy.IsSet() {
-		return
-	}
-	meta.IsBusy.Set()
-	defer meta.IsBusy.UnSet()
+	meta := s.GetOnboardGroup(group.Id)
 	num_peers := len(meta.GroupPeers)
 	completion := make(chan *pb.AppendEntriesResponse, num_peers)
 	sentMsgs := 0
@@ -682,7 +670,7 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		Client:            nclient,
 		PrivateKey:        privateKey,
 	}
-	bftRaftServer.GroupsOnboard = ScanHostedGroups(db, id)
+	bftRaftServer.ScanHostedGroups(id)
 	bftRaftServer.RegisterMembershipCommands()
 	bftRaftServer.SyncAlphaGroup()
 	log.Println("server generated:", bftRaftServer.Id)

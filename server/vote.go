@@ -6,9 +6,9 @@ import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
+	"log"
 	"sync"
 	"time"
-	"log"
 )
 
 func RequestVoteRequestSignData(req *pb.RequestVoteRequest) []byte {
@@ -19,28 +19,23 @@ func RequestVoteResponseSignData(res *pb.RequestVoteResponse) []byte {
 	return []byte(fmt.Sprint(res.Group, "-", res.Term, "-", res.LogIndex, "-", res.Term, "-", res.CandidateId, "-", res.Granted))
 }
 
-func ResetTerm(meta *RTGroupMeta, term uint64) {
-	meta.Group.Term = term
-	meta.Votes = []*pb.RequestVoteResponse{}
-	meta.VotedPeer = 0
-	for peerId := range meta.GroupPeers {
-		meta.SendVotesForPeers[peerId] = true
+func (m *RTGroup) ResetTerm(term uint64) {
+	m.Group.Term = term
+	m.Votes = []*pb.RequestVoteResponse{}
+	m.VotedPeer = 0
+	for peerId := range m.GroupPeers {
+		m.SendVotesForPeers[peerId] = true
 	}
 }
 
-func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
-	if meta.IsBusy.IsSet() {
-		return
-	}
-	meta.IsBusy.Set()
-	defer meta.IsBusy.UnSet()
-	RefreshTimer(meta, 10)
-	meta.Role = CANDIDATE
-	group := meta.Group
-	ResetTerm(meta, group.Term+1)
+func (m *RTGroup) BecomeCandidate() {
+	m.RefreshTimer(10)
+	m.Role = CANDIDATE
+	group := m.Group
+	m.ResetTerm(group.Term + 1)
 	term := group.Term
-	s.SaveGroupNTXN(meta.Group)
-	lastEntry := s.LastLogEntryNTXN(group.Id)
+	m.Server.SaveGroupNTXN(m.Group)
+	lastEntry := m.LastLogEntryNTXN()
 	var lastIndex uint64 = 0
 	var lastLogTerm uint64 = 0
 	if lastEntry != nil {
@@ -52,7 +47,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 		Term:        term,
 		LogIndex:    lastIndex,
 		LogTerm:     lastLogTerm,
-		CandidateId: meta.Peer,
+		CandidateId: m.Peer,
 		Signature:   []byte{},
 	}
 	request.Signature = s.Sign(RequestVoteRequestSignData(request))
@@ -109,7 +104,7 @@ func (s *BFTRaftServer) BecomeCandidate(meta *RTGroupMeta) {
 	}()
 }
 
-func (s *BFTRaftServer) BecomeLeader(meta *RTGroupMeta) {
+func (s *BFTRaftServer) BecomeLeader(meta *RTGroup) {
 	// when this peer become the leader of the group
 	// it need to send it's vote to followers to claim it's authority
 	// this only need to be done once in each term
@@ -123,7 +118,7 @@ func (s *BFTRaftServer) BecomeLeader(meta *RTGroupMeta) {
 	s.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
 }
 
-func (s *BFTRaftServer) BecomeFollower(meta *RTGroupMeta, appendEntryReq *pb.AppendEntriesRequest) bool {
+func (s *BFTRaftServer) BecomeFollower(meta *RTGroup, appendEntryReq *pb.AppendEntriesRequest) bool {
 	// first we need to verify the leader got all of the votes required
 	expectedVotes := ExpectedHonestPeers(s.OnboardGroupPeersSlice(meta.Group.Id))
 	if len(appendEntryReq.QuorumVotes) < expectedVotes {

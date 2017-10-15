@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
@@ -9,7 +10,6 @@ import (
 	"log"
 	"math/rand"
 	"strconv"
-	sync "github.com/90TechSAS/go-recursive-mutex"
 	"time"
 )
 
@@ -20,7 +20,8 @@ const (
 	OBSERVER  = 3
 )
 
-type RTGroupMeta struct {
+type RTGroup struct {
+	Server            *BFTRaftServer
 	Peer              uint64
 	Leader            uint64
 	VotedPeer         uint64
@@ -31,27 +32,26 @@ type RTGroupMeta struct {
 	Votes             []*pb.RequestVoteResponse
 	SendVotesForPeers map[uint64]bool // key is peer id
 	IsBusy            *abool.AtomicBool
-	Lock              *sync.RecursiveMutex
 }
 
-func NewRTGroupMeta(
-	peer uint64,
+func NewRTGroup(
+	server *BFTRaftServer,
 	leader uint64,
 	groupPeers map[uint64]*pb.Peer,
-	group *pb.RaftGroup,
-) *RTGroupMeta {
-	return &RTGroupMeta{
-		Peer:              peer,
+	group *pb.RaftGroup, role int,
+) *RTGroup {
+	return &RTGroup{
+		Server:            server,
+		Peer:              server.Id,
 		Leader:            leader,
 		VotedPeer:         0,
 		GroupPeers:        groupPeers,
 		Group:             group,
 		Timeout:           time.Now().Add(20 * time.Second),
-		Role:              FOLLOWER,
+		Role:              role,
 		Votes:             []*pb.RequestVoteResponse{},
 		SendVotesForPeers: map[uint64]bool{},
 		IsBusy:            abool.NewBool(false),
-		Lock:              &sync.RecursiveMutex{},
 	}
 }
 
@@ -136,7 +136,7 @@ func (s *BFTRaftServer) GetGroupHostsNTXN(groupId uint64) []*pb.Host {
 
 func (s *BFTRaftServer) GroupLeader(groupId uint64) *pb.GroupLeader {
 	res := &pb.GroupLeader{}
-	if meta, onboard := s.GroupsOnboard[groupId]; onboard {
+	if meta := s.GetOnboardGroup(groupId); meta != nil {
 		node := s.GetHostNTXN(meta.Leader)
 		if node == nil {
 			log.Println("cannot get node for group leader")
@@ -162,4 +162,52 @@ func (s *BFTRaftServer) GroupLeader(groupId uint64) *pb.GroupLeader {
 		})
 	}
 	return res
+}
+
+func (s *BFTRaftServer) GetOnboardGroup(id uint64) *RTGroup {
+	k := strconv.Itoa(int(id))
+	if meta, found := s.GroupsOnboard.Get(k); found {
+		return meta.(*RTGroup)
+	} else {
+		return nil
+	}
+}
+
+func (s *BFTRaftServer) SetOnboardGroup(meta *RTGroup) {
+	k := strconv.Itoa(int(meta.Group.Id))
+	if meta == nil {
+		panic("group is nil")
+	}
+	s.GroupsOnboard.Set(k, meta)
+}
+
+func (m *RTGroup) RefreshTimer(mult float32) {
+	m.Timeout = time.Now().Add(time.Duration(RandomTimeout(mult)) * time.Millisecond)
+}
+
+func (m *RTGroup) StartTimingWheel() {
+	go func() {
+		for true {
+			if m.Role == FOLLOWER {
+				if m.Leader == m.Peer {
+					panic("Follower is leader")
+				}
+				// not leader
+				log.Println(m.Peer, "is candidate")
+				m.BecomeCandidate()
+			} else if m.Role == LEADER {
+				// is leader, send heartbeat
+				m.SendFollowersHeartbeat(context.Background(), meta.Peer, meta.Group)
+			} else if m.Role == CANDIDATE {
+				// is candidate but vote expired, start a new vote term
+				log.Println(s.Id, "started a new election")
+				m.BecomeCandidate(meta)
+			} else if m.Role == OBSERVER {
+				// update local data
+				m.PullAndCommitGroupLogs(meta.Group.Id)
+				RefreshTimer(meta, 5)
+			}
+			m.Timeout
+		}
+	}()
 }

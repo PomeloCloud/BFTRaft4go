@@ -8,26 +8,17 @@ import (
 	"log"
 )
 
-func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
-	meta, foundMeta := s.GroupsOnboard[groupId]
-	if !foundMeta {
-		panic("meta not found for pull")
-	}
-	if meta.IsBusy.IsSet() {
-		return
-	}
-	meta.IsBusy.Set()
-	defer meta.IsBusy.UnSet()
+func (m *RTGroup) PullAndCommitGroupLogs() {
 	peerClients := []*pb.BFTRaftClient{}
-	for _, peer := range meta.GroupPeers {
-		node := s.GetHostNTXN(peer.Id)
+	for _, peer := range m.GroupPeers {
+		node := m.Server.GetHostNTXN(peer.Id)
 		if rpc, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 			peerClients = append(peerClients, &rpc)
 		}
 	}
 	req := &pb.PullGroupLogsResuest{
-		Group: groupId,
-		Index: s.LastEntryIndexNTXN(groupId) + 1,
+		Group: m.Group.Id,
+		Index: m.LastEntryIndexNTXN() + 1,
 	}
 	// Pull entries
 	entries := utils.MajorityResponse(peerClients, func(client pb.BFTRaftClient) (interface{}, []byte) {
@@ -44,8 +35,8 @@ func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 	// now append and commit logs one by one
 	for _, entry := range entries {
 		needCommit := false
-		if err := s.DB.Update(func(txn *badger.Txn) error {
-			if err := s.AppendEntryToLocal(txn, meta.Group, entry); err == nil {
+		if err := m.Server.DB.Update(func(txn *badger.Txn) error {
+			if err := m.AppendEntryToLocal(txn, entry); err == nil {
 				needCommit = true
 				return nil
 			} else {
@@ -56,7 +47,7 @@ func (s *BFTRaftServer) PullAndCommitGroupLogs(groupId uint64) {
 			return
 		}
 		if needCommit {
-			s.CommitGroupLog(groupId, entry)
+			m.CommitGroupLog(entry)
 		}
 	}
 }
