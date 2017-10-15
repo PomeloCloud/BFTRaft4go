@@ -605,3 +605,23 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 	}
 	return vote, nil
 }
+
+func (m *RTGroup) RPCGroupMembers(ctx context.Context, req *pb.GroupId) (*pb.GroupMembersResponse, error) {
+	members := []*pb.GroupMember{}
+	for _, p := range m.GroupPeers {
+		host := m.Server.GetHostNTXN(p.Id)
+		if host == nil {
+			log.Println("cannot get host for group members")
+			continue
+		}
+		members = append(members, &pb.GroupMember{
+			Peer: p,
+			Host: host,
+		})
+	}
+	return &pb.GroupMembersResponse{
+		Members:   members,
+		Signature: m.Server.Sign(GetMembersSignData(members)),
+		LastEntry: m.LastLogEntryNTXN(),
+	}, nil
+}

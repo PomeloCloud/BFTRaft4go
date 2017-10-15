@@ -160,37 +160,19 @@ func (s *BFTRaftServer) GroupHosts(ctx context.Context, request *pb.GroupId) (*p
 	return &pb.GroupNodesResponse{Nodes: result, Signature: signature}, nil
 }
 
+// this function should be called only on group members
 func (s *BFTRaftServer) GroupMembers(ctx context.Context, req *pb.GroupId) (*pb.GroupMembersResponse, error) {
-	peersMap := map[uint64]*pb.Peer{}
-	lastEntry := &pb.LogEntry{}
-	s.DB.View(func(txn *badger.Txn) error {
-		lastEntry = s.LastLogEntry(txn, req.GroupId)
-		peersMap = GetGroupPeersFromKV(txn, req.GroupId)
-		return nil
-	})
-	members := []*pb.GroupMember{}
-	for _, p := range peersMap {
-		host := s.GetHostNTXN(p.Id)
-		if host == nil {
-			log.Println("cannot get host for group members")
-			continue
-		}
-		members = append(members, &pb.GroupMember{
-			Peer: p,
-			Host: host,
-		})
+	meta := s.GetOnboardGroup(req.GroupId)
+	if meta == nil {
+		return nil, errors.New("cannot find group")
 	}
-	return &pb.GroupMembersResponse{
-		Members:   members,
-		Signature: s.Sign(GetMembersSignData(members)),
-		LastEntry: lastEntry,
-	}, nil
+	return meta.RPCGroupMembers(ctx, req)
 }
 
 func (s *BFTRaftServer) GetGroupContent(ctx context.Context, req *pb.GroupId) (*pb.RaftGroup, error) {
 	group := s.GetGroupNTXN(req.GroupId)
 	if group == nil {
-		log.Println(s.Id, "cannot find group", req.GroupId)
+		return nil, errors.New("cannot find group")
 	}
 	return group, nil
 }
