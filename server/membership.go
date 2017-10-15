@@ -21,10 +21,10 @@ const (
 )
 
 func (s *BFTRaftServer) RegisterMembershipCommands() {
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, NODE_JOIN, s.SMNodeJoin)
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, REG_NODE, s.SMRegHost)
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, NEW_CLIENT, s.SMNewClient)
-	s.RegisterRaftFunc(utils.ALPHA_GROUP, NEW_GROUP, s.SMNewGroup)
+	s.RegisterRaftFunc(NODE_JOIN, s.SMNodeJoin)
+	s.RegisterRaftFunc(REG_NODE, s.SMRegHost)
+	s.RegisterRaftFunc(NEW_CLIENT, s.SMNewClient)
+	s.RegisterRaftFunc(NEW_GROUP, s.SMNewGroup)
 }
 
 // Register a node into the network
@@ -97,7 +97,7 @@ func (s *BFTRaftServer) SMNodeJoin(arg *[]byte, entry *pb.LogEntry) []byte {
 			inv := &pb.GroupInvitation{
 				Group:  groupId,
 				Leader: meta.Leader,
-				Node:   meta.Peer,
+				Node:   meta.Server.Id,
 			}
 			inv.Signature = s.Sign(InvitationSignature(inv))
 			if client, err := utils.GetClusterRPC(address); err == nil {

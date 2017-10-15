@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
@@ -26,7 +25,7 @@ func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
 	return peers
 }
 
-func (m *RTGroup) PeerUncommittedLogEntries(group *pb.RaftGroup, peer *pb.Peer) ([]*pb.LogEntry, *pb.LogEntry) {
+func (m *RTGroup) PeerUncommittedLogEntries(peer *pb.Peer) ([]*pb.LogEntry, *pb.LogEntry) {
 	entries_ := []*pb.LogEntry{}
 	prevEntry := &pb.LogEntry{
 		Term:  0,
@@ -102,7 +101,7 @@ func (s *BFTRaftServer) ScanHostedGroups(serverId uint64) map[uint64]*RTGroup {
 	return res
 }
 
-func (m *RTGroup) OnboardGroupPeersSlice(groupId uint64) []*pb.Peer {
+func (m *RTGroup) OnboardGroupPeersSlice() []*pb.Peer {
 	peers := []*pb.Peer{}
 	for _, peer := range m.GroupPeers {
 		peers = append(peers, peer)

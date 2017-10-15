@@ -170,9 +170,9 @@ func ApproveAppendSignData(res *pb.ApproveAppendResponse) []byte {
 	return append(bs1, utils.U64Bytes(res.Index)...)
 }
 
-func (m *RTGroup) CommitGroupLog(groupId uint64, entry *pb.LogEntry) *[]byte {
+func (m *RTGroup) CommitGroupLog(entry *pb.LogEntry) *[]byte {
 	funcId := entry.Command.FuncId
-	fun := m.Server.FuncReg[groupId][funcId]
+	fun := m.Server.FuncReg[funcId]
 	input := entry.Command.Arg
 	result := fun(&input, entry)
 	return &result
