@@ -57,6 +57,8 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 	}
 	m := s.GetOnboardGroup(cmd.Group)
 	if m != nil && m.Leader == s.Id {
+		m.Lock.Lock()
+		defer m.Lock.Unlock()
 		isRegNewNode := false
 		log.Println("executing command group:", cmd.Group, "func:", cmd.FuncId, "client:", cmd.ClientId)
 		if s.GetHostNTXN(cmd.ClientId) == nil && cmd.Group == utils.ALPHA_GROUP && cmd.FuncId == REG_NODE {
@@ -65,7 +67,6 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 			isRegNewNode = true
 		}
 		if isRegNewNode || s.VerifyCommandSign(cmd) { // the node is the leader to this group
-			groupMeta := s.GetOnboardGroup(group_id)
 			response.LeaderId = s.Id
 			var index uint64
 			var hash []byte
@@ -82,7 +83,7 @@ func (s *BFTRaftServer) ExecCommand(ctx context.Context, cmd *pb.CommandRequest)
 				return m.AppendEntryToLocal(txn, &logEntry)
 			}); err == nil {
 				m.SendFollowersHeartbeat(ctx)
-				if len(groupMeta.GroupPeers) < 2 || m.WaitLogApproved(index) {
+				if len(m.GroupPeers) < 2 || m.WaitLogApproved(index) {
 					response.Result = *m.CommitGroupLog(&logEntry)
 				}
 			} else {
@@ -263,6 +264,7 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		NodePublicKeys:   cache.New(5*time.Minute, 1*time.Minute),
 		ClientPublicKeys: cache.New(5*time.Minute, 1*time.Minute),
 		GroupInvitations: map[uint64]chan *pb.GroupInvitation{},
+		GroupsOnboard:    cmap.New(),
 		FuncReg:          map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte{},
 		Client:           nclient,
 		PrivateKey:       privateKey,

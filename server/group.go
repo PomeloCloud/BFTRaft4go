@@ -1,9 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
-	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/90TechSAS/go-recursive-mutex"
 	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
+	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
@@ -12,8 +15,6 @@ import (
 	"math/rand"
 	"strconv"
 	"time"
-	"bytes"
-	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 const (
@@ -34,6 +35,7 @@ type RTGroup struct {
 	Votes             []*pb.RequestVoteResponse
 	SendVotesForPeers map[uint64]bool // key is peer id
 	IsBusy            *abool.AtomicBool
+	Lock              recmutex.RecursiveMutex
 }
 
 func NewRTGroup(
@@ -53,6 +55,7 @@ func NewRTGroup(
 		Votes:             []*pb.RequestVoteResponse{},
 		SendVotesForPeers: map[uint64]bool{},
 		IsBusy:            abool.NewBool(false),
+		Lock:              recmutex.RecursiveMutex{},
 	}
 	meta.StartTimeWheel()
 	return meta
@@ -193,7 +196,9 @@ func (m *RTGroup) StartTimeWheel() {
 		for true {
 			if m.Timeout.After(time.Now()) {
 				time.Sleep(100 * time.Millisecond)
+				continue
 			}
+			m.Lock.Lock()
 			if m.Role == FOLLOWER {
 				if m.Leader == m.Server.Id {
 					panic("Follower is leader")
@@ -213,11 +218,14 @@ func (m *RTGroup) StartTimeWheel() {
 				m.PullAndCommitGroupLogs()
 				m.RefreshTimer(5)
 			}
+			m.Lock.Unlock()
 		}
 	}()
 }
 
 func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
 	group := m.Group
 	groupId := group.Id
 	reqLeaderId := req.LeaderId
@@ -404,6 +412,7 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 }
 
 func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
+	m.RefreshTimer(1)
 	num_peers := len(m.GroupPeers)
 	completion := make(chan *pb.AppendEntriesResponse, num_peers)
 	sentMsgs := 0
@@ -491,7 +500,7 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 			peer.NextIndex = peer.MatchIndex + 1
 			m.GroupPeers[peer.Id] = peer
 			log.Println("peer:", peer.Id, "index changed")
-			if err :=m.Server.DB.Update(func(txn *badger.Txn) error {
+			if err := m.Server.DB.Update(func(txn *badger.Txn) error {
 				return m.Server.SavePeer(txn, peer)
 			}); err != nil {
 				log.Println("cannot save peer:", peer.Id, err)

@@ -1,10 +1,7 @@
 package server
 
 import (
-	"context"
 	"math/rand"
-	"time"
-	"log"
 )
 
 func RandomTimeout(mult float32) int {
