@@ -6,6 +6,7 @@ import (
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"strconv"
+	"log"
 )
 
 func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {
@@ -64,7 +65,7 @@ func (m *RTGroup) PeerUncommittedLogEntries(peer *pb.Peer) ([]*pb.LogEntry, *pb.
 		entries_ = entries
 		return nil
 	})
-	// log.Println("prev index for", peer.Id, "is", prevEntry.Index)
+	log.Println("prev index for", peer.Id, "is", prevEntry.Index, peer.MatchIndex, "/", peer.NextIndex)
 	return entries_, prevEntry
 }
 

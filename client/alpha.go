@@ -26,10 +26,15 @@ func (arc *AlphaRPCsCache) Get() []*spb.BFTRaftClient {
 		nodes := utils.AlphaNodes(arc.bootstraps)
 		arc.rpcs = []*spb.BFTRaftClient{}
 		bootstraps := []string{}
+		if len(nodes) == 0 {
+			log.Println("thre is no alpha nodes found")
+		}
 		for _, node := range nodes {
 			if c, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 				arc.rpcs = append(arc.rpcs, &c)
 				bootstraps = append(bootstraps, node.ServerAddr)
+			} else {
+				log.Println("cannot get cluster rpc for getting alpha nodes:", err)
 			}
 		}
 		if len(bootstraps) > 0 {

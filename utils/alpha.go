@@ -11,6 +11,8 @@ func AlphaNodes(servers []string) []*spb.Host {
 	for _, addr := range servers {
 		if c, err := GetClusterRPC(addr); err == nil {
 			bootstrapServers = append(bootstrapServers, &c)
+		} else {
+			log.Println("cannot get rpc for alpha nodes")
 		}
 	}
 	res := MajorityResponse(bootstrapServers, func(c spb.BFTRaftClient) (interface{}, []byte) {

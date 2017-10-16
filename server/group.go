@@ -409,7 +409,7 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 			)
 		}
 	}
-	// log.Println("report back to leader index:", response.Index)
+	log.Println("report back to leader index:", response.Index)
 	return response, nil
 }
 
@@ -437,9 +437,9 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 			}
 			signData := AppendLogEntrySignData(m.Group.Id, m.Group.Term, prevEntry.Index, prevEntry.Term)
 			signature := m.Server.Sign(signData)
-			sentMsgs++
-			go func() {
-				if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
+			if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
+				sentMsgs++
+				go func() {
 					if appendResult, err := client.AppendEntries(ctx, &pb.AppendEntriesRequest{
 						Group:        m.Group.Id,
 						Term:         m.Group.Term,
@@ -456,11 +456,11 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 						log.Println("append log failed:", err)
 						completion <- nil
 					}
-				} else {
-					log.Println("error on append entry logs to followers:", err)
-				}
-			}()
 
+				}()
+			} else {
+				log.Println("error on append entry logs to followers:", err)
+			}
 		}
 	}
 	log.Println("sending log to", sentMsgs, "followers with", num_peers, "peers")
@@ -484,10 +484,10 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 		}
 		log.Println(peerId, "append response with last index:", response.Index)
 		if response.Index != peer.MatchIndex {
+			log.Println("peer:", peer.Id, "index changed:", peer.MatchIndex, "->", response.Index)
 			peer.MatchIndex = response.Index
 			peer.NextIndex = peer.MatchIndex + 1
 			m.GroupPeers[peer.Id] = peer
-			log.Println("peer:", peer.Id, "index changed")
 			if err := m.Server.DB.Update(func(txn *badger.Txn) error {
 				return m.Server.SavePeer(txn, peer)
 			}); err != nil {

@@ -65,12 +65,13 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 	// This function should be invoked every time it startup
 	// First we need to get all alpha nodes
 	// get alpha members from alpha nodes
-	res := utils.MajorityResponse(s.Client.AlphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
+	alphaRPCs := s.Client.AlphaRPCs.Get()
+	res := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
 		if res, err := client.GroupMembers(context.Background(), &spb.GroupId{
 			GroupId: utils.ALPHA_GROUP,
 		}); err == nil {
 			features := GetMembersSignData(res.Members)
-			log.Println("got alpha group member:", res)
+			log.Println("got alpha group member:", len(res.Members))
 			return res, features
 		} else {
 			log.Println("cannot get group members:", err)
@@ -107,7 +108,7 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 		if group == nil {
 			log.Println("cannot find alpha group at local, will pull from remote")
 			// alpha group cannot be found, it need to be generated
-			res := utils.MajorityResponse(s.Client.AlphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
+			res := utils.MajorityResponse(alphaRPCs, func(client spb.BFTRaftClient) (interface{}, []byte) {
 				if res, err := client.GetGroupContent(context.Background(), &spb.GroupId{GroupId: utils.ALPHA_GROUP}); err == nil {
 					if data, err2 := proto.Marshal(res); err2 == nil {
 						return res, data
