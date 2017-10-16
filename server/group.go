@@ -232,10 +232,12 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 	leaderPeer := m.GroupPeers[reqLeaderId]
 	lastLogHash := m.LastEntryHashNTXN()
 	// log.Println("append log from", req.LeaderId, "to", s.Id, "entries:", len(req.Entries))
+	lastEntryIndex := m.LastEntryIndexNTXN()
+	log.Println("has last entry index:", lastEntryIndex)
 	response := &pb.AppendEntriesResponse{
 		Group:     m.Group.Id,
 		Term:      group.Term,
-		Index:     m.LastEntryIndexNTXN(),
+		Index:     lastEntryIndex,
 		Successed: false,
 		Convinced: false,
 		Hash:      lastLogHash,
@@ -437,41 +439,35 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 			signature := m.Server.Sign(signData)
 			sentMsgs++
 			go func() {
-				peerRPChan := make(chan *pb.AppendEntriesResponse)
-				go func() {
-					if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
-						if appendResult, err := client.AppendEntries(ctx, &pb.AppendEntriesRequest{
-							Group:        m.Group.Id,
-							Term:         m.Group.Term,
-							LeaderId:     m.Server.Id,
-							PrevLogIndex: prevEntry.Index,
-							PrevLogTerm:  prevEntry.Term,
-							Signature:    signature,
-							QuorumVotes:  votes,
-							Entries:      entries,
-						}); err == nil {
-							appendResult.Peer = peerId
-							peerRPChan <- appendResult
-						} else {
-							log.Println("append log failed:", err)
-							peerRPChan <- nil
-						}
+				if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
+					if appendResult, err := client.AppendEntries(ctx, &pb.AppendEntriesRequest{
+						Group:        m.Group.Id,
+						Term:         m.Group.Term,
+						LeaderId:     m.Server.Id,
+						PrevLogIndex: prevEntry.Index,
+						PrevLogTerm:  prevEntry.Term,
+						Signature:    signature,
+						QuorumVotes:  votes,
+						Entries:      entries,
+					}); err == nil {
+						appendResult.Peer = peerId
+						completion <- appendResult
+					} else {
+						log.Println("append log failed:", err)
+						completion <- nil
 					}
-				}()
-				select {
-				case res := <-peerRPChan:
-					completion <- res
-				case <-time.After(5 * time.Second):
-					completion <- nil
+				} else {
+					log.Println("error on append entry logs to followers:", err)
 				}
 			}()
 
 		}
 	}
-	// log.Println("sending log to", sentMsgs, "followers with", num_peers, "peers")
+	log.Println("sending log to", sentMsgs, "followers with", num_peers, "peers")
 	for i := 0; i < sentMsgs; i++ {
 		response := <-completion
 		if response == nil {
+			log.Println("append entry response is nil")
 			continue
 		}
 		peerId := response.Peer
@@ -481,9 +477,12 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 			log.Println("cannot find public key for:", peerId)
 			continue
 		}
-		if utils.VerifySign(publicKey, response.Signature, response.Hash) != nil {
-			return
+		if err := utils.VerifySign(publicKey, response.Signature, response.Hash); err != nil {
+			// TODO: fix signature verification
+			// log.Println("cannot verify append response signature:", err)
+			// continue
 		}
+		log.Println(peerId, "append response with last index:", response.Index)
 		var lastEntry *pb.LogEntry
 		entries := uncommittedEntries[peerId]
 		if len(entries) == 0 {
@@ -505,6 +504,8 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 			}); err != nil {
 				log.Println("cannot save peer:", peer.Id, err)
 			}
+		} else {
+			log.Println(peer.Id, "last index unchanged:", response.Index, "-", peer.MatchIndex)
 		}
 		m.SendVotesForPeers[peerId] = !response.Convinced
 	}
