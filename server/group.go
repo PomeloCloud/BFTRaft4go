@@ -9,12 +9,15 @@ import (
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
+	"github.com/huandu/goroutine"
 	"github.com/patrickmn/go-cache"
 	"github.com/tevino/abool"
 	"log"
 	"math/rand"
 	"strconv"
 	"time"
+	"errors"
+	"fmt"
 )
 
 const (
@@ -246,28 +249,19 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 	}
 	// verify group and leader existence
 	if group == nil || leaderPeer == nil {
-		// log.Println("host or group not existed on append entries")
-		return response, nil
+		return nil, errors.New("host or group not existed on append entries")
 	}
 	// check leader transfer
 	if len(req.QuorumVotes) > 0 && req.LeaderId != m.Leader {
 		if !m.BecomeFollower(req) {
-			log.Println("cannot become a follower when append entries due to votes")
-			return response, nil
+			return nil, errors.New("cannot become a follower when append entries due to votes")
 		}
 	} else if req.LeaderId != m.Leader {
-		log.Println("leader not matches when append entries")
-		return response, nil
+		return nil, errors.New("leader not matches when append entries")
 	}
 	response.Convinced = true
-	// check leader node exists
-	leaderNode := m.Server.GetHostNTXN(leaderPeer.Id)
-	if leaderPeer == nil {
-		log.Println("cannot get leader when append entries")
-		return response, nil
-	}
 	// verify signature
-	if leaderPublicKey := m.Server.GetHostPublicKey(leaderNode.Id); leaderPublicKey != nil {
+	if leaderPublicKey := m.Server.GetHostPublicKey(m.Leader); leaderPublicKey != nil {
 		signData := AppendLogEntrySignData(group.Id, group.Term, req.PrevLogIndex, req.PrevLogTerm)
 		if err := utils.VerifySign(leaderPublicKey, req.Signature, signData); err != nil {
 			// log.Println("leader signature not right when append entries:", err)
@@ -275,8 +269,7 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 			// return response, nil
 		}
 	} else {
-		log.Println("cannot get leader public key when append entries")
-		return response, nil
+		return nil, errors.New("cannot get leader public key when append entries")
 	}
 	m.Timeout = time.Now().Add(10 * time.Second)
 	if len(req.Entries) > 0 {
@@ -298,8 +291,8 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 			if req.PrevLogTerm != lastLogTerm {
 				// log mismatch, cannot preceded
 				// what to do next will leave to the leader
-				log.Println("cannot get leader public key when append entries", req.PrevLogTerm, lastLogTerm)
-				return response, nil
+				err := fmt.Sprint("cannot get leader public key when append entries", req.PrevLogTerm, lastLogTerm)
+				return nil, errors.New(err)
 			} else {
 				// first log matched
 				// but we still need to check hash for upcoming logs
@@ -414,6 +407,8 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 }
 
 func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
 	m.RefreshTimer(1)
 	num_peers := len(m.GroupPeers)
 	completion := make(chan *pb.AppendEntriesResponse, num_peers)
@@ -450,8 +445,8 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 						QuorumVotes:  votes,
 						Entries:      entries,
 					}); err == nil {
-						appendResult.Peer = peerId
-						completion <- appendResult
+						// WARN: the result may not from the peer we requested
+ 						completion <- appendResult
 					} else {
 						log.Println("append log failed:", err)
 						completion <- nil
@@ -484,7 +479,9 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 		}
 		log.Println(peerId, "append response with last index:", response.Index)
 		if response.Index != peer.MatchIndex {
-			log.Println("peer:", peer.Id, "index changed:", peer.MatchIndex, "->", response.Index)
+			log.Println(
+				"#", goroutine.GoroutineId(),
+				"peer:", peer.Id, "index changed:", peer.MatchIndex, "->", response.Index)
 			peer.MatchIndex = response.Index
 			peer.NextIndex = peer.MatchIndex + 1
 			m.GroupPeers[peer.Id] = peer
@@ -504,7 +501,7 @@ func (m *RTGroup) ApproveAppend(ctx context.Context, req *pb.AppendEntriesRespon
 	groupId := req.Group
 	response := &pb.ApproveAppendResponse{
 		Group:     groupId,
-		Peer:      0,
+		Peer:      m.Server.Id,
 		Index:     req.Index,
 		Appended:  false,
 		Delayed:   false,
