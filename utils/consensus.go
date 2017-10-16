@@ -77,6 +77,9 @@ func MajorityResponse(clients []*spb.BFTRaftClient, f func(client spb.BFTRaftCli
 	vals := map[uint64]interface{}{}
 	for i := 0; i < len(clients); i++ {
 		fr := <-serverResChan
+		if fr.result == nil {
+			continue
+		}
 		hash := HashData(fr.feature)
 		hashes = append(hashes, hash)
 		vals[hash] = fr.result

@@ -62,6 +62,7 @@ func (brc *BFTRaftClient) GetGroupHosts(groupId uint64) *[]*spb.Host {
 		); err == nil {
 			return &res.Nodes, utils.NodesSignData(res.Nodes)
 		} else {
+			log.Println("error on getting group host:", err)
 			return nil, []byte{}
 		}
 	})

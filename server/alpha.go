@@ -70,6 +70,7 @@ func (s *BFTRaftServer) SyncAlphaGroup() {
 			GroupId: utils.ALPHA_GROUP,
 		}); err == nil {
 			features := GetMembersSignData(res.Members)
+			log.Println("got alpha group member:", res)
 			return res, features
 		} else {
 			log.Println("cannot get group members:", err)
