@@ -233,7 +233,7 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 	lastLogHash := m.LastEntryHashNTXN()
 	// log.Println("append log from", req.LeaderId, "to", s.Id, "entries:", len(req.Entries))
 	lastEntryIndex := m.LastEntryIndexNTXN()
-	log.Println("has last entry index:", lastEntryIndex)
+	log.Println("has last entry index:", lastEntryIndex, "for", groupId)
 	response := &pb.AppendEntriesResponse{
 		Group:     m.Group.Id,
 		Term:      group.Term,
@@ -483,17 +483,6 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 			// continue
 		}
 		log.Println(peerId, "append response with last index:", response.Index)
-		var lastEntry *pb.LogEntry
-		entries := uncommittedEntries[peerId]
-		if len(entries) == 0 {
-			lastEntry = peerPrevEntry[peerId]
-		} else {
-			lastEntry = entries[len(entries)-1]
-		}
-		if lastEntry == nil {
-			log.Println("cannot found lastEntry")
-			continue
-		}
 		if response.Index != peer.MatchIndex {
 			peer.MatchIndex = response.Index
 			peer.NextIndex = peer.MatchIndex + 1
@@ -505,7 +494,7 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 				log.Println("cannot save peer:", peer.Id, err)
 			}
 		} else {
-			log.Println(peer.Id, "last index unchanged:", response.Index, "-", peer.MatchIndex)
+			// log.Println(peer.Id, "last index unchanged:", response.Index, "-", peer.MatchIndex)
 		}
 		m.SendVotesForPeers[peerId] = !response.Convinced
 	}

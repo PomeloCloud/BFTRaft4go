@@ -5,7 +5,7 @@ import (
 )
 
 func RandomTimeout(mult float32) int {
-	lowRange := 1000 * mult
-	highRange := 5000 * mult
+	lowRange := 500 * mult
+	highRange := 1000 * mult
 	return int(lowRange + highRange*rand.Float32())
 }
