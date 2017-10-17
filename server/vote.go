@@ -9,7 +9,6 @@ import (
 	"log"
 	"sync"
 	"time"
-	"github.com/onsi/gomega/matchers/support/goraph/node"
 )
 
 func RequestVoteRequestSignData(req *pb.RequestVoteRequest) []byte {
@@ -23,7 +22,8 @@ func RequestVoteResponseSignData(res *pb.RequestVoteResponse) []byte {
 func (m *RTGroup) ResetTerm(term uint64) {
 	m.Group.Term = term
 	m.Votes = []*pb.RequestVoteResponse{}
-	m.VotedPeer = 0
+	m.LastVotedTerm = 0
+	m.LastVotedTo = 0
 	for peerId := range m.GroupPeers {
 		m.SendVotesForPeers[peerId] = true
 	}
@@ -90,7 +90,7 @@ func (m *RTGroup) BecomeCandidate() {
 		close(voteReceived)
 		log.Println("received all vote response")
 	}()
-	expectedVotes := len(m.GroupPeers) / 2 // ExpectedHonestPeers(s.OnboardGroupPeersSlice(group.Id))
+	expectedVotes := m.ExpectedHonestPeers() // ExpectedHonestPeers(s.OnboardGroupPeersSlice(group.Id))
 	adequateVotes := make(chan bool, 1)
 	log.Println("expecting", expectedVotes, "votes to become a leader, term", m.Group.Term)
 	go func() {
@@ -132,13 +132,14 @@ func (m *RTGroup) BecomeLeader() {
 	m.Server.DB.Update(func(txn *badger.Txn) error {
 		return m.Server.SaveGroup(txn, m.Group)
 	})
+	log.Println("send votes heartbeat to followers for term", m.Group.Term)
 	m.SendFollowersHeartbeat(context.Background())
 }
 
 func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
 	// first we need to verify the leader got all of the votes required
 	log.Println("trying to become a follower of", appendEntryReq.LeaderId, ", term", appendEntryReq.Term)
-	expectedVotes := ExpectedHonestPeers(m.OnboardGroupPeersSlice())
+	expectedVotes := m.ExpectedHonestPeers()
 	receivedVotes := len(appendEntryReq.QuorumVotes)
 	if receivedVotes < expectedVotes {
 		log.Println("did not received enough vote", receivedVotes, "/", expectedVotes)
@@ -148,7 +149,7 @@ func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
 	votes := map[uint64]bool{}
 	for _, vote := range appendEntryReq.QuorumVotes {
 		votePeer, foundCandidate := m.GroupPeers[vote.Voter]
-		if !foundCandidate || appendEntryReq.Term < m.Group.Term {
+		if !foundCandidate {
 			log.Println("invalid candidate:", vote.Voter, "found:", foundCandidate, "term:", term, "-", m.Group.Term)
 			continue
 		}
@@ -166,18 +167,23 @@ func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
 			log.Println("vote properity not match this vote term, grant:", vote.Granted)
 		}
 	}
-	if len(votes) > expectedVotes {
+	if len(votes) >= expectedVotes {
 		// received enough votes, will transform to follower
 		log.Println(
 			"received enough votes, become a follower of:",
 			appendEntryReq.LeaderId,
 			", term", appendEntryReq.Term)
 		m.Role = FOLLOWER
-		m.Leader = appendEntryReq.LeaderId
 		m.ResetTerm(term)
+		m.RefreshTimer(10)
+		m.Leader = appendEntryReq.LeaderId
 		m.Server.SaveGroupNTXN(m.Group)
 		return true
 	} else {
+		log.Println(
+			"did not received enough votes, become a follower of:",
+			appendEntryReq.LeaderId,
+			", term", appendEntryReq.Term, "got", len(votes), "/", expectedVotes)
 		return false
 	}
 }

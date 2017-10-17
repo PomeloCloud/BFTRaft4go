@@ -31,7 +31,8 @@ const (
 type RTGroup struct {
 	Server            *BFTRaftServer
 	Leader            uint64
-	VotedPeer         uint64
+	LastVotedTo       uint64
+	LastVotedTerm     uint64
 	GroupPeers        map[uint64]*pb.Peer
 	Group             *pb.RaftGroup
 	Timeout           time.Time
@@ -52,7 +53,6 @@ func NewRTGroup(
 	meta := &RTGroup{
 		Server:            server,
 		Leader:            leader,
-		VotedPeer:         0,
 		GroupPeers:        groupPeers,
 		Group:             group,
 		Timeout:           time.Now().Add(20 * time.Second),
@@ -205,7 +205,11 @@ func (m *RTGroup) StartTimeWheel() {
 				continue
 			}
 			m.Lock.Lock()
-			if m.Role == FOLLOWER {
+			if m.Role == CANDIDATE {
+				// is candidate but vote expired, start a new vote term
+				log.Println(m.Group.Id, "started a new election")
+				m.BecomeCandidate()
+			} else if m.Role == FOLLOWER {
 				if m.Leader == m.Server.Id {
 					panic("Follower is leader")
 				}
@@ -215,10 +219,6 @@ func (m *RTGroup) StartTimeWheel() {
 			} else if m.Role == LEADER {
 				// is leader, send heartbeat
 				m.SendFollowersHeartbeat(context.Background())
-			} else if m.Role == CANDIDATE {
-				// is candidate but vote expired, start a new vote term
-				log.Println(m.Group.Id, "started a new election")
-				m.BecomeCandidate()
 			} else if m.Role == OBSERVER {
 				// update local data
 				m.PullAndCommitGroupLogs()
@@ -239,7 +239,6 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 	lastLogHash := m.LastEntryHashNTXN()
 	// log.Println("append log from", req.LeaderId, "to", s.Id, "entries:", len(req.Entries))
 	lastEntryIndex := m.LastEntryIndexNTXN()
-	log.Println("has last entry index:", lastEntryIndex, "for", groupId)
 	response := &pb.AppendEntriesResponse{
 		Group:     m.Group.Id,
 		Term:      group.Term,
@@ -256,12 +255,19 @@ func (m *RTGroup) AppendEntries(ctx context.Context, req *pb.AppendEntriesReques
 	}
 	// check leader transfer
 	if len(req.QuorumVotes) > 0 && req.LeaderId != m.Leader {
+		if req.Term < m.Group.Term {
+			return nil, errors.New(
+				fmt.Sprint("cannot become a follower when append entries due term compare failed",
+					req.Term, "/", m.Group.Term),
+			)
+		}
 		if !m.BecomeFollower(req) {
 			return nil, errors.New("cannot become a follower when append entries due to votes")
 		}
 	} else if req.LeaderId != m.Leader {
 		return nil, errors.New("leader not matches when append entries")
 	}
+	log.Println("has last entry index:", lastEntryIndex, "for", groupId)
 	response.Convinced = true
 	// verify signature
 	if leaderPublicKey := m.Server.GetHostPublicKey(m.Leader); leaderPublicKey != nil {
@@ -556,6 +562,7 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 	// all of the leader transfer verification happens here
 	group := m.Group
 	groupId := m.Group.Id
+	reqTerm := req.Term
 	lastLogEntry := m.LastLogEntryNTXN()
 	vote := &pb.RequestVoteResponse{
 		Group:       groupId,
@@ -566,32 +573,31 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 		Granted:     false,
 		Signature:   []byte{},
 	}
-	log.Println("vote request from", req.CandidateId, ", term", req.Term)
+	log.Println("vote request from", req.CandidateId, ", term", reqTerm)
 	vote.Signature = m.Server.Sign(RequestVoteResponseSignData(vote))
 	if group == nil {
 		log.Println("cannot grant vote to", req.CandidateId, ", cannot found group")
 		return vote, nil
 	}
-	if m.Role == LEADER && req.Term <= m.Group.Term {
+	if m.Role == LEADER && reqTerm <= m.Group.Term {
 		log.Println("leader will not vote for peer", req.CandidateId, "term", req.Term, "at term", m.Group.Term)
 	}
-	if req.Term-group.Term > utils.MAX_TERM_BUMP {
-		// the candidate bump terms too fast
-		log.Println("cannot grant vote to", req.CandidateId, ", term bump too fast")
-		return vote, nil
-	}
-	if group.Term > req.Term || lastLogEntry.Index > req.LogIndex {
+	if group.Term > reqTerm || lastLogEntry.Index > req.LogIndex {
 		// leader does not catch up
 		log.Println("cannot grant vote to", req.CandidateId, ", candidate logs left behind")
 		return vote, nil
 	}
-	if m.VotedPeer != 0 {
-		// already voted to other peer
-		log.Println("cannot grant vote to", req.CandidateId, ", already voted to", m.VotedPeer, ", term", req.Term)
+	if reqTerm < m.LastVotedTerm {
+		log.Println("voting for term", m.LastVotedTerm, "but got request for term", lastLogEntry.Term)
+	}
+	if reqTerm-group.Term > utils.MAX_TERM_BUMP {
+		// the candidate bump terms too fast
+		log.Println("cannot grant vote to", req.CandidateId, ", term bump too fast", group.Term, "->", reqTerm)
 		return vote, nil
 	}
-	if req.Term < group.Term {
-		log.Println("cannot grant vote to", req.CandidateId, ", earlier term")
+	if reqTerm == m.LastVotedTerm && m.LastVotedTo != 0 && m.LastVotedTo != req.CandidateId {
+		// already voted to other peer
+		log.Println("cannot grant vote to", req.CandidateId, ", already voted to", m.LastVotedTo, ", term", reqTerm)
 		return vote, nil
 	}
 	// TODO: check if the candidate really get the logs it claimed when the voter may fallen behind
@@ -605,14 +611,11 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 	for true {
 		<-time.After(time.Duration(interval) * time.Millisecond)
 		waitedCounts++
-		if m.Role == LEADER && req.Term <= m.Group.Term {
-			log.Println("this node have become a leader, will not vote for peer",
-				req.CandidateId, "term", req.Term, "at term", m.Group.Term)
-			break
-		} else if m.Role == CANDIDATE {
+		if m.Role == CANDIDATE || m.Role == LEADER {
 			vote.Granted = true
 			vote.Signature = m.Server.Sign(RequestVoteResponseSignData(vote))
-			m.VotedPeer = req.CandidateId
+			m.LastVotedTo = req.CandidateId
+			m.LastVotedTerm = req.Term
 			log.Println("grant vote to", req.CandidateId)
 			break
 		} else {

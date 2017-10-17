@@ -36,8 +36,8 @@ func (m *RTGroup) SetLogAppended(groupId uint64, logIndex uint64, isApproved boo
 	//}
 }
 
-func ExpectedHonestPeers(group_peers []*pb.Peer) int {
-	num_peers := len(group_peers)
+func (m *RTGroup) ExpectedHonestPeers() int {
+	num_peers := len(m.GroupPeers)
 	return num_peers - num_peers/2
 }
 
