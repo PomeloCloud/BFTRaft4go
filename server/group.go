@@ -561,12 +561,15 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 		Granted:     false,
 		Signature:   []byte{},
 	}
-	log.Println("vote request from", req.CandidateId)
+	log.Println("vote request from", req.CandidateId, ", term", req.Term)
+	vote.Signature = m.Server.Sign(RequestVoteResponseSignData(vote))
 	if group == nil {
 		log.Println("cannot grant vote to", req.CandidateId, ", cannot found group")
 		return vote, nil
 	}
-	vote.Signature = m.Server.Sign(RequestVoteResponseSignData(vote))
+	if m.Role == LEADER && req.Term <= m.Group.Term {
+		log.Println("leader will not vote for peer", req.CandidateId, "term", req.Term, "at term", m.Group.Term)
+	}
 	if req.Term-group.Term > utils.MAX_TERM_BUMP {
 		// the candidate bump terms too fast
 		log.Println("cannot grant vote to", req.CandidateId, ", term bump too fast")
@@ -581,7 +584,7 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 	}
 	if m.VotedPeer != 0 {
 		// already voted to other peer
-		log.Println("cannot grant vote to", req.CandidateId, ", already voted to", m.VotedPeer)
+		log.Println("cannot grant vote to", req.CandidateId, ", already voted to", m.VotedPeer, ", term", req.Term)
 		return vote, nil
 	}
 	if req.Term < group.Term {
@@ -593,18 +596,24 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 	// the condition for casting lazy voting is to wait until this peer turned into candidate
 	// we also need to check it the peer candidate term is just what the request indicated
 	waitedCounts := 0
-	interval := 100
+	interval := 500
 	secsToWait := 10
 	intervalCount := secsToWait * 1000 / interval
 	for true {
 		<-time.After(time.Duration(interval) * time.Millisecond)
 		waitedCounts++
-		if m.Role == CANDIDATE && vote.Term == m.Group.Term {
+		if m.Role == LEADER && req.Term <= m.Group.Term {
+			log.Println("this node have become a leader, will not vote for peer",
+				req.CandidateId, "term", req.Term, "at term", m.Group.Term)
+			break
+		} else if m.Role == CANDIDATE {
 			vote.Granted = true
 			vote.Signature = m.Server.Sign(RequestVoteResponseSignData(vote))
 			m.VotedPeer = req.CandidateId
 			log.Println("grant vote to", req.CandidateId)
 			break
+		} else {
+			log.Println("current role is", m.Role, "waiting to become a candidate", ", term", req.Term)
 		}
 		if waitedCounts >= intervalCount {
 			// timeout, will not grant

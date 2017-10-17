@@ -26,6 +26,7 @@ func (m *RTGroup) ResetTerm(term uint64) {
 	for peerId := range m.GroupPeers {
 		m.SendVotesForPeers[peerId] = true
 	}
+	m.Server.SaveGroupNTXN(m.Group)
 }
 
 func (m *RTGroup) BecomeCandidate() {
@@ -50,12 +51,13 @@ func (m *RTGroup) BecomeCandidate() {
 		CandidateId: m.Server.Id,
 		Signature:   []byte{},
 	}
+	log.Println("become a candidate", ", term", m.Group.Term)
 	request.Signature = m.Server.Sign(RequestVoteRequestSignData(request))
 	voteReceived := make(chan *pb.RequestVoteResponse)
 	numPeers := len(m.GroupPeers)
 	wg := sync.WaitGroup{}
 	wg.Add(numPeers)
-	log.Println("sending votes to", numPeers, "peers")
+	log.Println("sending vote request to", numPeers, "peers")
 	for _, peer := range m.GroupPeers {
 		nodeId := peer.Id
 		node := m.Server.GetHostNTXN(nodeId)
@@ -111,7 +113,7 @@ func (m *RTGroup) BecomeCandidate() {
 	}()
 	select {
 	case <-adequateVotes:
-		log.Println("now transfer to leader")
+		log.Println("now transfer to leader, term", m.Group.Term)
 		m.BecomeLeader()
 	case <-time.After(10 * time.Second):
 		log.Println("vote requesting time out")
@@ -134,7 +136,7 @@ func (m *RTGroup) BecomeLeader() {
 
 func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
 	// first we need to verify the leader got all of the votes required
-	log.Println("trying to become a follower of", appendEntryReq.LeaderId)
+	log.Println("trying to become a follower of", appendEntryReq.LeaderId, ", term", appendEntryReq.Term)
 	expectedVotes := ExpectedHonestPeers(m.OnboardGroupPeersSlice())
 	receivedVotes := len(appendEntryReq.QuorumVotes)
 	if receivedVotes < expectedVotes {
@@ -164,7 +166,10 @@ func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
 	}
 	if len(votes) > expectedVotes {
 		// received enough votes, will transform to follower
-		log.Println("received enough votes, become a follower of:", appendEntryReq.LeaderId)
+		log.Println(
+			"received enough votes, become a follower of:",
+			appendEntryReq.LeaderId,
+			", term", appendEntryReq.Term)
 		m.Role = FOLLOWER
 		m.Leader = appendEntryReq.LeaderId
 		m.ResetTerm(appendEntryReq.Term)
