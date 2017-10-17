@@ -31,7 +31,7 @@ func (m *RTGroup) ResetTerm(term uint64) {
 }
 
 func (m *RTGroup) BecomeCandidate() {
-	defer m.RefreshTimer(10)
+	defer m.RefreshTimer(25)
 	m.Role = CANDIDATE
 	group := m.Group
 	m.ResetTerm(group.Term + 1)
@@ -137,6 +137,8 @@ func (m *RTGroup) BecomeLeader() {
 }
 
 func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
+	m.VoteLock.Lock()
+	defer m.VoteLock.Unlock()
 	// first we need to verify the leader got all of the votes required
 	log.Println("trying to become a follower of", appendEntryReq.LeaderId, ", term", appendEntryReq.Term)
 	expectedVotes := m.ExpectedHonestPeers()

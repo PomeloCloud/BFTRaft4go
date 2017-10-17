@@ -562,6 +562,7 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 	// all of the leader transfer verification happens here
 	group := m.Group
 	groupId := m.Group.Id
+	groupTerm := group.Term
 	reqTerm := req.Term
 	lastLogEntry := m.LastLogEntryNTXN()
 	vote := &pb.RequestVoteResponse{
@@ -582,7 +583,7 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 	if m.Role == LEADER && reqTerm <= m.Group.Term {
 		log.Println("leader will not vote for peer", req.CandidateId, "term", req.Term, "at term", m.Group.Term)
 	}
-	if group.Term > reqTerm || lastLogEntry.Index > req.LogIndex {
+	if groupTerm >= reqTerm || lastLogEntry.Index > req.LogIndex {
 		// leader does not catch up
 		log.Println("cannot grant vote to", req.CandidateId, ", candidate logs left behind")
 		return vote, nil
@@ -590,7 +591,7 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 	if reqTerm < m.LastVotedTerm {
 		log.Println("voting for term", m.LastVotedTerm, "but got request for term", lastLogEntry.Term)
 	}
-	if reqTerm-group.Term > utils.MAX_TERM_BUMP {
+	if reqTerm-groupTerm > utils.MAX_TERM_BUMP {
 		// the candidate bump terms too fast
 		log.Println("cannot grant vote to", req.CandidateId, ", term bump too fast", group.Term, "->", reqTerm)
 		return vote, nil
@@ -611,7 +612,7 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 	for true {
 		<-time.After(time.Duration(interval) * time.Millisecond)
 		waitedCounts++
-		if m.Role == CANDIDATE || m.Role == LEADER {
+		if m.Role != FOLLOWER {
 			vote.Granted = true
 			vote.Signature = m.Server.Sign(RequestVoteResponseSignData(vote))
 			m.LastVotedTo = req.CandidateId
