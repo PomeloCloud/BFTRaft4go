@@ -19,4 +19,3 @@ func (fs *FeedbackServer) ResponseCommand(ctx context.Context, cmd *pb.CommandRe
 	}()
 	return &pb.Nothing{}, nil
 }
-

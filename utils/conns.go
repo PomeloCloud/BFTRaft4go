@@ -2,8 +2,8 @@ package utils
 
 import (
 	"google.golang.org/grpc"
-	"sync"
 	"log"
+	"sync"
 )
 
 var ClientConn map[string]*grpc.ClientConn = map[string]*grpc.ClientConn{}

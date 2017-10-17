@@ -145,7 +145,7 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 	if hosts == nil {
 		return nil, errors.New("cannot get group hosts")
 	}
-	expectedResponse := len(*hosts)/2
+	expectedResponse := len(*hosts) / 2
 	if expectedResponse == 0 {
 		expectedResponse = 1
 	}

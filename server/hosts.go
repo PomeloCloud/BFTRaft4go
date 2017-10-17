@@ -3,12 +3,12 @@ package server
 import (
 	"crypto/rsa"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"github.com/patrickmn/go-cache"
-	"strconv"
 	"log"
-	"github.com/PomeloCloud/BFTRaft4go/utils"
+	"strconv"
 )
 
 type NodeIterator struct {
@@ -32,7 +32,7 @@ func (s *BFTRaftServer) GetHost(txn *badger.Txn, nodeId uint64) *pb.Host {
 		s.Hosts.Set(cacheKey, &node, cache.DefaultExpiration)
 		return &node
 	} else {
-		log.Println("cannot get host", nodeId,"on", s.Id,":", err)
+		log.Println("cannot get host", nodeId, "on", s.Id, ":", err)
 		return nil
 	}
 }

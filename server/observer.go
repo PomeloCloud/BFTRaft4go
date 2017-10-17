@@ -1,9 +1,9 @@
 package server
 
 import (
+	"context"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
-	"context"
 	"github.com/dgraph-io/badger"
 	"log"
 )
@@ -27,7 +27,7 @@ func (m *RTGroup) PullAndCommitGroupLogs() {
 			if len(entries) == 0 {
 				return entries, []byte{1}
 			} else {
-				return entries, entries[len(entries) - 1].Hash
+				return entries, entries[len(entries)-1].Hash
 			}
 		}
 		return nil, []byte{}

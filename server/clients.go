@@ -1,10 +1,10 @@
 package server
 
 import (
-	"sync"
+	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
 	"github.com/patrickmn/go-cache"
 	"google.golang.org/grpc"
-	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
+	"sync"
 	"time"
 )
 

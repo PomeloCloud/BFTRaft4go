@@ -1,13 +1,13 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
 	"io/ioutil"
 	"log"
-	"encoding/json"
 )
 
 func GetConfig(kv *badger.DB) (*pb.ServerConfig, error) {

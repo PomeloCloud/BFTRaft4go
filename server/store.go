@@ -1,9 +1,9 @@
 package server
 
 import (
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"log"
-	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 const (

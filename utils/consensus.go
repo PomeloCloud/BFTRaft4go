@@ -87,7 +87,7 @@ func MajorityResponse(clients []*spb.BFTRaftClient, f func(client spb.BFTRaftCli
 	majorityHash := PickMajority(hashes)
 	if val, found := vals[majorityHash]; found {
 		return val
-	}  else {
+	} else {
 		for _, v := range vals {
 			return v
 		}

@@ -3,9 +3,9 @@ package utils
 import (
 	spb "github.com/PomeloCloud/BFTRaft4go/proto/server"
 	"google.golang.org/grpc"
+	"log"
 	"net"
 	"sync"
-	"log"
 )
 
 var RPCServers map[string]*grpc.Server = map[string]*grpc.Server{}

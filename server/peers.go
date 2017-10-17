@@ -5,8 +5,8 @@ import (
 	"github.com/PomeloCloud/BFTRaft4go/utils"
 	"github.com/dgraph-io/badger"
 	"github.com/golang/protobuf/proto"
-	"strconv"
 	"log"
+	"strconv"
 )
 
 func GetGroupPeersFromKV(txn *badger.Txn, group uint64) map[uint64]*pb.Peer {

@@ -1,10 +1,10 @@
 package server
 
 import (
+	"github.com/PomeloCloud/BFTRaft4go/utils"
+	"os"
 	"testing"
 	"time"
-	"os"
-	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 func initDB(dbPath string, t *testing.T) {
@@ -17,9 +17,9 @@ func initDB(dbPath string, t *testing.T) {
 func getServer(dbPath string, addr string, bootstraps []string, t *testing.T) *BFTRaftServer {
 	initDB(dbPath, t)
 	s, err := GetServer(Options{
-		DBPath: dbPath,
-		Address: addr,
-		Bootstrap: bootstraps,
+		DBPath:           dbPath,
+		Address:          addr,
+		Bootstrap:        bootstraps,
 		ConsensusTimeout: 5 * time.Second,
 	})
 

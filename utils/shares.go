@@ -1,8 +1,8 @@
 package utils
 
 import (
-	"github.com/golang/protobuf/proto"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/golang/protobuf/proto"
 )
 
 const (

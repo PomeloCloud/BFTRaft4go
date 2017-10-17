@@ -3,9 +3,9 @@ package main
 import (
 	"github.com/PomeloCloud/BFTRaft4go/server"
 	"github.com/PomeloCloud/BFTRaft4go/utils"
+	"log"
 	"os"
 	"time"
-	"log"
 )
 
 func initDB(dbPath string) {
