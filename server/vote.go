@@ -51,57 +51,71 @@ func (m *RTGroup) BecomeCandidate() {
 		Signature:   []byte{},
 	}
 	request.Signature = m.Server.Sign(RequestVoteRequestSignData(request))
-	lock := sync.Mutex{}
-	votes := 0
 	voteReceived := make(chan *pb.RequestVoteResponse)
-	adequateVotes := make(chan bool, 1)
+	numPeers := len(m.GroupPeers)
+	wg := sync.WaitGroup{}
+	wg.Add(numPeers)
+	log.Println("sending votes to", numPeers, "peers")
 	for _, peer := range m.GroupPeers {
 		nodeId := peer.Id
-		if nodeId == m.Server.Id {
-			continue
-		}
 		node := m.Server.GetHostNTXN(nodeId)
 		if node == nil {
-			log.Println("cannot get log for request votes")
+			log.Println("skip requesting self for a vote")
+			wg.Done()
+			continue
 		}
 		go func() {
 			if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 				if voteResponse, err := client.RequestVote(context.Background(), request); err == nil {
 					publicKey := m.Server.GetHostPublicKey(nodeId)
 					signData := RequestVoteResponseSignData(voteResponse)
-					if utils.VerifySign(publicKey, voteResponse.Signature, signData) == nil {
+					if err := utils.VerifySign(publicKey, voteResponse.Signature, signData); err == nil {
 						if voteResponse.Granted && voteResponse.LogIndex <= lastEntry.Index {
-							lock.Lock()
-							votes++
 							voteReceived <- voteResponse
-							lock.Unlock()
+						} else {
+							log.Println(nodeId, "peer not granted vote")
 						}
+					} else {
+						log.Println("error on verify vote response:", err)
 					}
+				} else {
+					log.Println("error on request vote:", err)
 				}
+			} else {
+				log.Println("cannot get client for request votes")
 			}
+			wg.Done()
 		}()
 	}
+	go func() {
+		wg.Wait()
+		close(voteReceived)
+		log.Println("received all vote response")
+	}()
+	adequateVotes := make(chan bool, 1)
 	go func() {
 		// Here we can follow the rule of Raft by expecting majority votes
 		// or follow the PBFT rule by expecting n - f votes
 		// I will use the rule from Raft first
 		expectedVotes := len(m.GroupPeers) / 2 // ExpectedHonestPeers(s.OnboardGroupPeersSlice(group.Id))
-		for vote, voted := <-voteReceived; voted; {
-			if votes > expectedVotes {
+		votes := 0
+		for vote := range voteReceived {
+			votes++
+			log.Println("already  received", votes, "votes")
+			if votes >= expectedVotes {
 				m.Votes = append(m.Votes, vote)
 				adequateVotes <- true
 				break
 			}
 		}
 	}()
-	go func() {
-		select {
-		case <-adequateVotes:
-			m.BecomeLeader()
-		case <-time.After(10 * time.Second):
-			close(voteReceived)
-		}
-	}()
+	select {
+	case <-adequateVotes:
+		log.Println("now transfer to leader")
+		m.BecomeLeader()
+	case <-time.After(10 * time.Second):
+		log.Println("vote requesting time out")
+	}
 }
 
 func (m *RTGroup) BecomeLeader() {
@@ -127,7 +141,7 @@ func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
 	votes := map[uint64]bool{}
 	for _, vote := range appendEntryReq.QuorumVotes {
 		votePeer, foundCandidate := m.GroupPeers[vote.Voter]
-		if !foundCandidate || vote.Term <=m.Group.Term {
+		if !foundCandidate || vote.Term <= m.Group.Term {
 			continue
 		}
 		// check their signatures

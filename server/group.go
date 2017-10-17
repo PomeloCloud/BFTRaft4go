@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"github.com/90TechSAS/go-recursive-mutex"
 	cpb "github.com/PomeloCloud/BFTRaft4go/proto/client"
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
@@ -16,8 +18,6 @@ import (
 	"math/rand"
 	"strconv"
 	"time"
-	"errors"
-	"fmt"
 )
 
 const (
@@ -446,7 +446,7 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 						Entries:      entries,
 					}); err == nil {
 						// WARN: the result may not from the peer we requested
- 						completion <- appendResult
+						completion <- appendResult
 					} else {
 						log.Println("append log failed:", err)
 						completion <- nil
@@ -561,20 +561,31 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 		Granted:     false,
 		Signature:   []byte{},
 	}
+	log.Println("vote request from", req.CandidateId)
 	if group == nil {
+		log.Println("cannot grant vote to", req.CandidateId, ", cannot found group")
 		return vote, nil
 	}
 	vote.Signature = m.Server.Sign(RequestVoteResponseSignData(vote))
-	if group.Term >= req.Term || lastLogEntry.Index > req.LogIndex {
-		// leader does not catch up
+	if req.Term-group.Term > utils.MAX_TERM_BUMP {
+		// the candidate bump terms too fast
+		log.Println("cannot grant vote to", req.CandidateId, ", term bump too fast")
 		return vote, nil
+	}
+	if group.Term > req.Term || lastLogEntry.Index > req.LogIndex {
+		// leader does not catch up
+		log.Println("cannot grant vote to", req.CandidateId, ", candidate logs left behind")
+		return vote, nil
+	} else {
+		m.ResetTerm(req.Term)
 	}
 	if m.VotedPeer != 0 {
 		// already voted to other peer
+		log.Println("cannot grant vote to", req.CandidateId, ", already voted to", m.VotedPeer)
 		return vote, nil
 	}
-	if req.Term-group.Term > utils.MAX_TERM_BUMP {
-		// the candidate bump terms too fast
+	if req.Term < group.Term {
+		log.Println("cannot grant vote to", req.CandidateId, ", earlier term")
 		return vote, nil
 	}
 	// TODO: check if the candidate really get the logs it claimed when the voter may fallen behind
@@ -592,10 +603,12 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 			vote.Granted = true
 			vote.Signature = m.Server.Sign(RequestVoteResponseSignData(vote))
 			m.VotedPeer = req.CandidateId
+			log.Println("grant vote to", req.CandidateId)
 			break
 		}
 		if waitedCounts >= intervalCount {
 			// timeout, will not grant
+			log.Println("cannot grant vote to", req.CandidateId, ", time out")
 			break
 		}
 	}
