@@ -134,29 +134,37 @@ func (m *RTGroup) BecomeLeader() {
 
 func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
 	// first we need to verify the leader got all of the votes required
+	log.Println("trying to become a follower of", appendEntryReq.LeaderId)
 	expectedVotes := ExpectedHonestPeers(m.OnboardGroupPeersSlice())
-	if len(appendEntryReq.QuorumVotes) < expectedVotes {
+	receivedVotes := len(appendEntryReq.QuorumVotes)
+	if receivedVotes < expectedVotes {
+		log.Println("did not received enough vote", receivedVotes, "/", expectedVotes)
 		return false
 	}
 	votes := map[uint64]bool{}
 	for _, vote := range appendEntryReq.QuorumVotes {
 		votePeer, foundCandidate := m.GroupPeers[vote.Voter]
 		if !foundCandidate || vote.Term <= m.Group.Term {
+			log.Println("invalid candidate:", vote.Voter)
 			continue
 		}
 		// check their signatures
 		signData := RequestVoteResponseSignData(vote)
 		publicKey := m.Server.GetHostPublicKey(votePeer.Id)
-		if utils.VerifySign(publicKey, vote.Signature, signData) != nil {
+		if err := utils.VerifySign(publicKey, vote.Signature, signData); err != nil {
+			log.Println("verify vote from", vote.Voter, "failed:", err)
 			continue
 		}
 		// check their properties to avoid forging
 		if vote.Group == m.Group.Id && vote.CandidateId == appendEntryReq.LeaderId && vote.Granted {
 			votes[votePeer.Id] = true
+		} else {
+			log.Println("vote properity not match this vote term, grant:", vote.Granted)
 		}
 	}
 	if len(votes) > expectedVotes {
 		// received enough votes, will transform to follower
+		log.Println("received enough votes, become a follower of:", appendEntryReq.LeaderId)
 		m.Role = FOLLOWER
 		m.Leader = appendEntryReq.LeaderId
 		m.ResetTerm(appendEntryReq.Term)
