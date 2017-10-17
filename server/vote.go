@@ -9,6 +9,7 @@ import (
 	"log"
 	"sync"
 	"time"
+	"github.com/onsi/gomega/matchers/support/goraph/node"
 )
 
 func RequestVoteRequestSignData(req *pb.RequestVoteRequest) []byte {
@@ -30,7 +31,7 @@ func (m *RTGroup) ResetTerm(term uint64) {
 }
 
 func (m *RTGroup) BecomeCandidate() {
-	m.RefreshTimer(10)
+	defer m.RefreshTimer(10)
 	m.Role = CANDIDATE
 	group := m.Group
 	m.ResetTerm(group.Term + 1)
@@ -61,11 +62,6 @@ func (m *RTGroup) BecomeCandidate() {
 	for _, peer := range m.GroupPeers {
 		nodeId := peer.Id
 		node := m.Server.GetHostNTXN(nodeId)
-		if node == nil {
-			log.Println("skip requesting self for a vote")
-			wg.Done()
-			continue
-		}
 		go func() {
 			if client, err := utils.GetClusterRPC(node.ServerAddr); err == nil {
 				if voteResponse, err := client.RequestVote(context.Background(), request); err == nil {
@@ -94,27 +90,32 @@ func (m *RTGroup) BecomeCandidate() {
 		close(voteReceived)
 		log.Println("received all vote response")
 	}()
+	expectedVotes := len(m.GroupPeers) / 2 // ExpectedHonestPeers(s.OnboardGroupPeersSlice(group.Id))
 	adequateVotes := make(chan bool, 1)
+	log.Println("expecting", expectedVotes, "votes to become a leader, term", m.Group.Term)
 	go func() {
 		// Here we can follow the rule of Raft by expecting majority votes
 		// or follow the PBFT rule by expecting n - f votes
 		// I will use the rule from Raft first
-		expectedVotes := len(m.GroupPeers) / 2 // ExpectedHonestPeers(s.OnboardGroupPeersSlice(group.Id))
-		votes := 0
+		votes := []*pb.RequestVoteResponse{}
 		for vote := range voteReceived {
-			votes++
-			log.Println("already  received", votes, "votes")
-			if votes >= expectedVotes {
-				m.Votes = append(m.Votes, vote)
+			votes = append(votes, vote)
+			if len(votes) >= expectedVotes {
+				m.Votes = votes
 				adequateVotes <- true
 				break
 			}
 		}
+		log.Println("received", len(votes), "votes, term:", m.Group.Term)
 	}()
 	select {
 	case <-adequateVotes:
-		log.Println("now transfer to leader, term", m.Group.Term)
-		m.BecomeLeader()
+		if m.Role == CANDIDATE {
+			log.Println("now transfer to leader, term", m.Group.Term)
+			m.BecomeLeader()
+		} else {
+			log.Println("this peer have already transfered to other role:", m.Role)
+		}
 	case <-time.After(10 * time.Second):
 		log.Println("vote requesting time out")
 	}
@@ -143,11 +144,12 @@ func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
 		log.Println("did not received enough vote", receivedVotes, "/", expectedVotes)
 		return false
 	}
+	term := appendEntryReq.Term
 	votes := map[uint64]bool{}
 	for _, vote := range appendEntryReq.QuorumVotes {
 		votePeer, foundCandidate := m.GroupPeers[vote.Voter]
-		if !foundCandidate || vote.Term <= m.Group.Term {
-			log.Println("invalid candidate:", vote.Voter)
+		if !foundCandidate || appendEntryReq.Term < m.Group.Term {
+			log.Println("invalid candidate:", vote.Voter, "found:", foundCandidate, "term:", term, "-", m.Group.Term)
 			continue
 		}
 		// check their signatures
@@ -172,7 +174,7 @@ func (m *RTGroup) BecomeFollower(appendEntryReq *pb.AppendEntriesRequest) bool {
 			", term", appendEntryReq.Term)
 		m.Role = FOLLOWER
 		m.Leader = appendEntryReq.LeaderId
-		m.ResetTerm(appendEntryReq.Term)
+		m.ResetTerm(term)
 		m.Server.SaveGroupNTXN(m.Group)
 		return true
 	} else {

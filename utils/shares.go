@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	MAX_TERM_BUMP = 10
+	MAX_TERM_BUMP = 20
 	ALPHA_GROUP   = 1 // the group for recording server members, groups, peers etc
 )
 

@@ -17,6 +17,7 @@ import (
 	"log"
 	"math/rand"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -39,6 +40,7 @@ type RTGroup struct {
 	SendVotesForPeers map[uint64]bool // key is peer id
 	IsBusy            *abool.AtomicBool
 	Lock              recmutex.RecursiveMutex
+	VoteLock          sync.Mutex
 }
 
 func NewRTGroup(
@@ -59,6 +61,7 @@ func NewRTGroup(
 		SendVotesForPeers: map[uint64]bool{},
 		IsBusy:            abool.NewBool(false),
 		Lock:              recmutex.RecursiveMutex{},
+		VoteLock:          sync.Mutex{},
 	}
 	meta.StartTimeWheel()
 	return meta
@@ -548,6 +551,8 @@ func (m *RTGroup) ApproveAppend(ctx context.Context, req *pb.AppendEntriesRespon
 }
 
 func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
+	m.VoteLock.Lock()
+	defer m.VoteLock.Unlock()
 	// all of the leader transfer verification happens here
 	group := m.Group
 	groupId := m.Group.Id
@@ -579,8 +584,6 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 		// leader does not catch up
 		log.Println("cannot grant vote to", req.CandidateId, ", candidate logs left behind")
 		return vote, nil
-	} else {
-		m.ResetTerm(req.Term)
 	}
 	if m.VotedPeer != 0 {
 		// already voted to other peer
