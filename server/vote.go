@@ -113,6 +113,7 @@ func (m *RTGroup) BecomeCandidate() {
 		if m.Role == CANDIDATE {
 			log.Println("now transfer to leader, term", m.Group.Term)
 			m.BecomeLeader()
+			m.RefreshTimer(1)
 		} else {
 			log.Println("this peer have already transfered to other role:", m.Role)
 		}

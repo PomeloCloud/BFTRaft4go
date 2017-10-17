@@ -620,7 +620,7 @@ func (m *RTGroup) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (
 			log.Println("grant vote to", req.CandidateId)
 			break
 		} else {
-			log.Println("current role is", m.Role, "waiting to become a candidate", ", term", req.Term)
+			// log.Println("current role is", m.Role, "waiting to become a candidate", ", term", req.Term)
 		}
 		if waitedCounts >= intervalCount {
 			// timeout, will not grant
