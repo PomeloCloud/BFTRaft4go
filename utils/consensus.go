@@ -9,8 +9,8 @@ import (
 )
 
 type FuncResult struct {
-	result  interface{}
-	feature []byte
+	Result  interface{}
+	Feature []byte
 }
 
 func HashData(data []byte) uint64 {
@@ -56,8 +56,8 @@ func MajorityResponse(clients []*spb.BFTRaftClient, f func(client spb.BFTRaftCli
 			go func() {
 				res, fea := f(*c)
 				dataReceived <- FuncResult{
-					result:  res,
-					feature: fea,
+					Result:  res,
+					Feature: fea,
 				}
 			}()
 			go func() {
@@ -66,8 +66,8 @@ func MajorityResponse(clients []*spb.BFTRaftClient, f func(client spb.BFTRaftCli
 					serverResChan <- res
 				case <-time.After(10 * time.Second):
 					serverResChan <- FuncResult{
-						result:  nil,
-						feature: []byte{},
+						Result:  nil,
+						Feature: []byte{},
 					}
 				}
 			}()
@@ -77,12 +77,12 @@ func MajorityResponse(clients []*spb.BFTRaftClient, f func(client spb.BFTRaftCli
 	vals := map[uint64]interface{}{}
 	for i := 0; i < len(clients); i++ {
 		fr := <-serverResChan
-		if fr.result == nil {
+		if fr.Result == nil {
 			continue
 		}
-		hash := HashData(fr.feature)
+		hash := HashData(fr.Feature)
 		hashes = append(hashes, hash)
-		vals[hash] = fr.result
+		vals[hash] = fr.Result
 	}
 	majorityHash := PickMajority(hashes)
 	if val, found := vals[majorityHash]; found {
