@@ -310,6 +310,7 @@ func InitDatabase(dbPath string) {
 		if err := db.Close(); err != nil {
 			panic(err)
 		}
+		log.Println("generated wallet")
 	} else {
 		println("Cannot generate private key for the server")
 	}
