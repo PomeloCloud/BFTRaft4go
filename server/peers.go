@@ -70,7 +70,7 @@ func (m *RTGroup) PeerUncommittedLogEntries(peer *pb.Peer) ([]*pb.LogEntry, *pb.
 }
 
 func (s *BFTRaftServer) ScanHostedGroups(serverId uint64) map[uint64]*RTGroup {
-	scanKey := utils.U64Bytes(GROUP_PEERS)
+	scanKey := utils.U32Bytes(GROUP_PEERS)
 	res := map[uint64]*RTGroup{}
 	s.DB.View(func(txn *badger.Txn) error {
 		iter := txn.NewIterator(badger.IteratorOptions{})
@@ -84,19 +84,26 @@ func (s *BFTRaftServer) ScanHostedGroups(serverId uint64) map[uint64]*RTGroup {
 			if peer.Id == serverId {
 				group := GetGroupFromKV(txn, peer.Group)
 				if group != nil {
+					defaultLeader := uint64(0)
+					if len(s.GetGroupHosts(txn, group.Id)) < 2 {
+						defaultLeader = s.Id
+					}
 					groups[peer.Group] = NewRTGroup(
-						s, 0,
+						s, defaultLeader,
 						GetGroupPeersFromKV(txn, peer.Group),
 						group, FOLLOWER,
 					)
 				}
 			}
+			iter.Next()
 		}
 		iter.Close()
-		groups = res
+		res = groups
 		return nil
 	})
+	log.Println("found", len(res), "hosted groups")
 	for groupId, meta := range res {
+		log.Println("scanned group:", meta.Group.Id)
 		k := strconv.Itoa(int(groupId))
 		s.GroupsOnboard.Set(k, meta)
 	}

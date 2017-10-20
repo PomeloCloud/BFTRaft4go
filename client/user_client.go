@@ -86,6 +86,9 @@ func (brc *BFTRaftClient) GetGroupLeader(groupId uint64) spb.BFTRaftClient {
 			context.Background(), &spb.GroupId{GroupId: groupId},
 		); err == nil {
 			// TODO: verify signature
+			if res.Node == nil {
+				log.Println("nil response for get leader for group:", groupId)
+			}
 			return res.Node, []byte(res.Node.ServerAddr)
 		} else {
 			log.Println("cannot get group leader on alpha peer:", err)
