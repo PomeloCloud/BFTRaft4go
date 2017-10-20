@@ -107,6 +107,20 @@ func (brc *BFTRaftClient) GetGroupLeader(groupId uint64) spb.BFTRaftClient {
 	return nil
 }
 
+func (brc *BFTRaftClient) GroupExists(groupId uint64) bool {
+	res := utils.MajorityResponse(brc.AlphaRPCs.Get(), func(client spb.BFTRaftClient) (interface{}, []byte) {
+		if _, err := client.GetGroupContent(
+			context.Background(), &spb.GroupId{GroupId: groupId},
+		); err == nil {
+			// TODO: verify signature
+			return true, []byte{1}
+		} else {
+			return false, []byte{0}
+		}
+	})
+	return res.(bool)
+}
+
 func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte) (*[]byte, error) {
 	leader := brc.GetGroupLeader(groupId)
 	if leader == nil {
