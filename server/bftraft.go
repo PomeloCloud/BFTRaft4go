@@ -269,19 +269,25 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		Client:           nclient,
 		PrivateKey:       privateKey,
 	}
+	log.Println("scanning hosted groups")
 	bftRaftServer.ScanHostedGroups(id)
+	log.Println("registering membership contracts")
 	bftRaftServer.RegisterMembershipCommands()
+	log.Println("learning network node members")
 	bftRaftServer.SyncAlphaGroup()
 	log.Println("server generated:", bftRaftServer.Id)
 	return &bftRaftServer, nil
 }
 
 func (s *BFTRaftServer) StartServer() error {
+	log.Println("registering raft server service")
 	pb.RegisterBFTRaftServer(utils.GetGRPCServer(s.Opts.Address), s)
+	log.Println("registering raft feedback service")
 	cpb.RegisterBFTRaftClientServer(utils.GetGRPCServer(s.Opts.Address), &client.FeedbackServer{ClientIns: s.Client})
 	log.Println("going to start server with id:", s.Id, "on:", s.Opts.Address)
 	go utils.GRPCServerListen(s.Opts.Address)
 	time.Sleep(1 * time.Second)
+	log.Println("registering this host")
 	s.RegHost()
 	return nil
 }
