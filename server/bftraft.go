@@ -266,6 +266,7 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 		GroupInvitations: map[uint64]chan *pb.GroupInvitation{},
 		GroupsOnboard:    cmap.New(),
 		FuncReg:          map[uint64]func(arg *[]byte, entry *pb.LogEntry) []byte{},
+		PendingNewGroups: map[uint64]chan error{},
 		Client:           nclient,
 		PrivateKey:       privateKey,
 	}

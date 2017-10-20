@@ -147,8 +147,10 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 		log.Println("cannot decode new group data", err)
 		return []byte{0}
 	}
+	log.Println("creating new group", group.Id,"for:", hostId)
 	// replication cannot be below 1 and cannot larger than 100
 	if group.Replications < 1 || group.Replications > 100 {
+		log.Println("invalid replications:", group.Replications)
 		return []byte{0}
 	}
 	// generate peer
@@ -189,7 +191,7 @@ func (s *BFTRaftServer) SMNewGroup(arg *[]byte, entry *pb.LogEntry) []byte {
 		go func() {
 			s.PendingNewGroups[group.Id] <- err
 		}()
-		log.Println("cannot save new group")
+		log.Println("cannot save new group:", err)
 		return []byte{0}
 	}
 }
@@ -301,12 +303,13 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 
 func (s *BFTRaftServer) NewGroup(group *pb.RaftGroup) error {
 	groupData, err := proto.Marshal(group)
-	if err == nil {
+	if err != nil {
 		return err
 	}
 	s.PendingNewGroups[group.Id] = make(chan error, 1)
 	res, err := s.Client.ExecCommand(utils.ALPHA_GROUP, NEW_GROUP, groupData)
-	if err == nil {
+	if err != nil {
+		log.Println("cannot decode new group:", err)
 		return err
 	}
 	if len(*res) > 1 {
