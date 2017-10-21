@@ -467,7 +467,7 @@ func (m *RTGroup) SendFollowersHeartbeat(ctx context.Context) {
 			}
 		}
 	}
-	log.Println("sending log to", sentMsgs, "followers with", num_peers, "peers")
+	log.Println("sending log for group", m.Group , "to", sentMsgs, "followers with", num_peers, "peers")
 	for i := 0; i < sentMsgs; i++ {
 		response := <-completion
 		if response == nil {
