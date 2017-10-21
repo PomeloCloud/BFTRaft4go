@@ -55,7 +55,7 @@ func NewRTGroup(
 		Leader:            leader,
 		GroupPeers:        groupPeers,
 		Group:             group,
-		Timeout:           time.Now().Add(20 * time.Second),
+		Timeout:           time.Now().Add(60 * time.Second),
 		Role:              role,
 		Votes:             []*pb.RequestVoteResponse{},
 		SendVotesForPeers: map[uint64]bool{},

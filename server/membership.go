@@ -229,6 +229,24 @@ func (s *BFTRaftServer) RegHost() error {
 	return errors.New("unexpected")
 }
 
+//func (s *BFTRaftServer) SyncAlphaLogs() {
+//	alphaRPCs := s.Client.AlphaRPCs.Get()
+//	alphaGroup := s.GetOnboardGroup(utils.ALPHA_GROUP)
+//	lastLog := alphaGroup.LastLogEntryNTXN()
+//	entris := utils.MajorityResponse(alphaRPCs, func(client pb.BFTRaftClient) (interface{}, []byte) {
+//		entries, err := client.PullGroupLogs(context.Background(), &pb.PullGroupLogsResuest{
+//			Group: utils.ALPHA_GROUP, Index: lastLog.Index,
+//		})
+//		if err != nil {
+//			log.Println("error on sync alpha group:", err)
+//			return  nil, []byte{0}
+//		} else {
+//			return entries, []byte{1}
+//		}
+//	})
+//	alphaGroup.appe
+//}
+
 func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 	log.Println(s.Id, ": join group:", groupId)
 	joinEntry := pb.NodeJoinGroupEntry{Group: groupId}
@@ -262,6 +280,8 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 					if len(invitations) > expectedResponse {
 						receivedEnoughInv <- true
 					}
+				} else {
+					log.Println("cannot accept the invitation for group", groupId, "peer", inv.Node)
 				}
 			}
 		}()
@@ -284,7 +304,7 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 				groupPeers[s.Id] = peer
 				role := FOLLOWER
 				if leader == s.Id {
-					log.Println("node", s.Id, "joined as a leader")
+					log.Println("node", s.Id, "joined as a leader for group:", groupId)
 					leader = LEADER
 				}
 				meta := NewRTGroup(
