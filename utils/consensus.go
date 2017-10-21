@@ -29,6 +29,22 @@ func GetBytes(key interface{}) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+func ExpectedPlayers(num int) int {
+	if num == 0 {
+		return 1
+	} else if num == 1 {
+		return 1
+	} else if num == 2{
+		return 2
+	} else if num == 3 {
+		return 2
+	} else if num < 5 {
+		return 3
+	} else {
+		return num / 2 + 1
+	}
+}
+
 func PickMajority(hashes []uint64) uint64 {
 	countMap := map[uint64]int{}
 	for _, hash := range hashes {
@@ -39,9 +55,9 @@ func PickMajority(hashes []uint64) uint64 {
 			countMap[hash] = 1
 		}
 	}
-	expectedConsensus := len(hashes) / 2
+	expectedConsensus := ExpectedPlayers(len(hashes))
 	for hash, count := range countMap {
-		if count > expectedConsensus {
+		if count >= expectedConsensus {
 			return hash
 		}
 	}

@@ -2,6 +2,7 @@ package server
 
 import (
 	pb "github.com/PomeloCloud/BFTRaft4go/proto/server"
+	"github.com/PomeloCloud/BFTRaft4go/utils"
 )
 
 func (m *RTGroup) prepareApproveChan(groupId uint64, logIndex uint64) {
@@ -38,7 +39,7 @@ func (m *RTGroup) SetLogAppended(groupId uint64, logIndex uint64, isApproved boo
 
 func (m *RTGroup) ExpectedHonestPeers() int {
 	num_peers := len(m.GroupPeers)
-	return num_peers - num_peers/2
+	return utils.ExpectedPlayers(num_peers)
 }
 
 func (s *BFTRaftServer) PeerApprovedAppend(groupId uint64, logIndex uint64, peer uint64, group_peers []*pb.Peer, isApproved bool) {

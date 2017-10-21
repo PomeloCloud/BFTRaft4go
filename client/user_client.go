@@ -162,10 +162,7 @@ func (brc *BFTRaftClient) ExecCommand(groupId uint64, funcId uint64, arg []byte)
 	if hosts == nil {
 		return nil, errors.New("cannot get group hosts")
 	}
-	expectedResponse := len(*hosts) / 2
-	if expectedResponse == 0 {
-		expectedResponse = 1
-	}
+	expectedResponse := utils.ExpectedPlayers(len(*hosts))
 	responseReceived := map[uint64][]byte{}
 	responseHashes := []uint64{}
 	replicationCompleted := make(chan bool, 1)

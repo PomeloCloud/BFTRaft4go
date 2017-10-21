@@ -269,7 +269,7 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 		receivedEnoughInv := make(chan bool, 1)
 		invitations := map[uint64]*pb.GroupInvitation{}
 		invLeaders := []uint64{}
-		expectedResponse := len(hostsMap) / 2
+		expectedResponse := utils.ExpectedPlayers(len(hostsMap))
 		go func() {
 			for inv := range s.GroupInvitations[groupId] {
 				if _, isMember := hostsMap[inv.Node]; isMember {
@@ -277,7 +277,7 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 						invitations[inv.Node] = inv
 						invLeaders = append(invLeaders, inv.Leader)
 					}
-					if len(invitations) > expectedResponse {
+					if len(invitations) >= expectedResponse {
 						receivedEnoughInv <- true
 					}
 				} else {
