@@ -282,9 +282,14 @@ func (s *BFTRaftServer) NodeJoin(groupId uint64) error {
 				leader := utils.PickMajority(invLeaders)
 				log.Println("received enough invitations, will join to group", groupId, "with leader", leader)
 				groupPeers[s.Id] = peer
+				role := FOLLOWER
+				if leader == s.Id {
+					log.Println("node", s.Id, "joined as a leader")
+					leader = LEADER
+				}
 				meta := NewRTGroup(
 					s, leader, groupPeers,
-					group, FOLLOWER,
+					group, role,
 				)
 				s.SetOnboardGroup(meta)
 				log.Println("node", peer.Id, "joined group", groupId)

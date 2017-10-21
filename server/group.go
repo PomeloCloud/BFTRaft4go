@@ -211,7 +211,7 @@ func (m *RTGroup) StartTimeWheel() {
 				m.BecomeCandidate()
 			} else if m.Role == FOLLOWER {
 				if m.Leader == m.Server.Id {
-					panic("Follower is leader")
+					panic(fmt.Sprint("Follower is leader for group:", m.Group))
 				}
 				// not leader
 				log.Println(m.Server.Id, "is candidate")
