@@ -233,7 +233,7 @@ func GetServer(serverOpts Options) (*BFTRaftServer, error) {
 	dbopt := badger.DefaultOptions
 	dbopt.Dir = serverOpts.DBPath
 	dbopt.ValueDir = serverOpts.DBPath
-	db, err := badger.Open(&dbopt)
+	db, err := badger.Open(dbopt)
 	if err != nil {
 		log.Panic(err)
 		return nil, err
@@ -300,7 +300,7 @@ func InitDatabase(dbPath string) {
 		dbopt := badger.DefaultOptions
 		dbopt.Dir = dbPath
 		dbopt.ValueDir = dbPath
-		db, err := badger.Open(&dbopt)
+		db, err := badger.Open(dbopt)
 		if err != nil {
 			panic(err)
 		}
