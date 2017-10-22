@@ -12,6 +12,8 @@ var RPCServers map[string]*grpc.Server = map[string]*grpc.Server{}
 var RPCLock sync.Mutex = sync.Mutex{}
 
 func GetClusterRPC(addr string) (spb.BFTRaftClient, error) {
+	RPCLock.Lock()
+	defer RPCLock.Unlock()
 	if cc, err := GetClientConn(addr); err == nil {
 		return spb.NewBFTRaftClient(cc), nil
 	} else {
